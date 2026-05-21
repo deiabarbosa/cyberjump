@@ -1,0 +1,3351 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CyberJump: A Saga do Hacker Branco</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #050510;
+    overflow: hidden; font-family: 'Courier New', monospace; color: #0ff;
+    user-select: none;
+  }
+  #wrap {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    background: #000;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    box-shadow: 0 0 40px #0ff5, 0 0 80px #f0f3;
+    border: 2px solid #0ff;
+    max-width: 100vw; max-height: 100vh;
+  }
+  #hint {
+    position: fixed; bottom: 6px; left: 50%; transform: translateX(-50%);
+    color: #0ff8; font-size: 11px; letter-spacing: 1px; pointer-events:none;
+  }
+  /* ===== Controles touch (mobile) ===== */
+  #touch {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    display: none; justify-content: space-between; align-items: flex-end;
+    padding: 18px clamp(12px, 4vw, 40px) clamp(12px, 4vh, 32px);
+    pointer-events: none; z-index: 10;
+  }
+  /* Mostra em telas de toque (smartphones/tablets) */
+  @media (pointer: coarse), (max-width: 820px) { #touch { display: flex; } }
+  #touch .grp { display: flex; gap: clamp(10px, 2.5vw, 22px); pointer-events: auto; }
+  #touch .actions { flex-direction: row-reverse; }
+  .tbtn {
+    width: clamp(56px, 13vmin, 96px); height: clamp(56px, 13vmin, 96px);
+    border-radius: 50%; border: 3px solid rgba(0,255,255,.65);
+    background: rgba(0,255,255,.12); color: #0ff;
+    font: bold clamp(18px, 4.2vmin, 30px)/1 monospace;
+    display:flex; align-items:center; justify-content:center;
+    user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation; backdrop-filter: blur(2px);
+    box-shadow: 0 0 14px rgba(0,255,255,.35), inset 0 0 8px rgba(0,255,255,.2);
+    text-shadow: 0 0 8px currentColor;
+  }
+  .tbtn:active, .tbtn.act {
+    background: rgba(0,255,255,.4); transform: scale(.92);
+    box-shadow: 0 0 22px rgba(0,255,255,.7);
+  }
+  .tbtn small { font-size: clamp(7px, 1.6vmin, 11px); display:block; margin-top:2px; opacity:.85; }
+  .tbtn.b-jump { width: clamp(72px, 16vmin, 120px); height: clamp(72px, 16vmin, 120px);
+                  background: rgba(0,255,80,.14); border-color: rgba(0,255,80,.75); color: #0f5;
+                  box-shadow: 0 0 14px rgba(0,255,80,.4), inset 0 0 8px rgba(0,255,80,.25); }
+  .tbtn.b-jump:active, .tbtn.b-jump.act { background: rgba(0,255,80,.45); }
+  .tbtn.b-fire { background: rgba(255,68,68,.14); border-color: rgba(255,68,68,.75); color: #f44;
+                  box-shadow: 0 0 14px rgba(255,68,68,.4), inset 0 0 8px rgba(255,68,68,.25); }
+  .tbtn.b-fire:active, .tbtn.b-fire.act { background: rgba(255,68,68,.45); }
+  .tbtn.b-c    { background: rgba(255,0,255,.14); border-color: rgba(255,0,255,.8); color: #f0f;
+                  box-shadow: 0 0 14px rgba(255,0,255,.5), inset 0 0 8px rgba(255,0,255,.3); }
+  .tbtn.b-c:active, .tbtn.b-c.act { background: rgba(255,0,255,.5); }
+  #touch.hide-action .actions .b-c { display: none; }
+  #touch.in-quiz .grp { display: none; }
+  #touch.in-menu .grp { display: none; }
+  #orient {
+    position: fixed; inset: 0; background: #000d; color: #0ff; z-index: 20;
+    display: none; align-items: center; justify-content: center;
+    font: bold 20px monospace; text-align: center; padding: 20px;
+  }
+  @media (pointer: coarse) and (orientation: portrait) {
+    #orient { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="game" width="960" height="540"></canvas></div>
+<div id="hint">setas/WASD: mover &nbsp;|&nbsp; espaço: pular &nbsp;|&nbsp; X: tiro &nbsp;|&nbsp; ENTER: confirmar &nbsp;|&nbsp; M: mudo</div>
+<div id="touch" class="hide-action in-menu">
+  <div class="grp dpad">
+    <button class="tbtn b-left" data-key="arrowleft" aria-label="esquerda">◀</button>
+    <button class="tbtn b-right" data-key="arrowright" aria-label="direita">▶</button>
+  </div>
+  <div class="grp actions">
+    <button class="tbtn b-jump" data-key=" " aria-label="pular">⤴<small>JUMP</small></button>
+    <button class="tbtn b-fire" data-key="x" aria-label="atirar">✦<small>FIRE</small></button>
+    <button class="tbtn b-c" data-key="c" aria-label="decryption">C<small>DECRYPT</small></button>
+  </div>
+</div>
+<div id="orient">📱➜📱<br><br>ROTACIONE O CELULAR<br>PARA MODO PAISAGEM</div>
+<script>
+"use strict";
+
+/* ============================================================================
+   CYBERJUMP — A SAGA DO HACKER BRANCO
+   Single-file HTML5 Canvas platformer com quiz de cibersegurança.
+============================================================================ */
+
+const CANVAS = document.getElementById('game');
+const CTX = CANVAS.getContext('2d');
+CTX.imageSmoothingEnabled = false;
+const W = CANVAS.width, H = CANVAS.height;
+
+// ----- Resize: mantém aspect ratio dentro da janela ------------------------
+function fit() {
+  const ratio = W / H;
+  const winR = window.innerWidth / window.innerHeight;
+  let cw, ch;
+  if (winR > ratio) { ch = window.innerHeight - 8; cw = ch * ratio; }
+  else { cw = window.innerWidth - 8; ch = cw / ratio; }
+  CANVAS.style.width = cw + 'px';
+  CANVAS.style.height = ch + 'px';
+}
+window.addEventListener('resize', fit);
+window.addEventListener('orientationchange', () => setTimeout(fit, 100));
+fit();
+
+/* ----- INPUT -------------------------------------------------------------- */
+const KEYS = {};
+const PRESSED = {};
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  if (!KEYS[k]) PRESSED[k] = true;
+  KEYS[k] = true;
+});
+window.addEventListener('keyup', e => { KEYS[e.key.toLowerCase()] = false; });
+function pollPressed(k) { if (PRESSED[k]) { PRESSED[k] = false; return true; } return false; }
+
+/* ----- TOUCH CONTROLS ----------------------------------------------------- */
+const IS_TOUCH = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+              || ('ontouchstart' in window) || window.innerWidth < 820;
+const TOUCH_EL = document.getElementById('touch');
+const heldKeys = new Set(); // teclas mantidas via touch (pra auto-repeat de fire)
+
+function bindTbtn(btn) {
+  const key = btn.dataset.key;
+  const press = (ev) => {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    Audio.init();
+    KEYS[key] = true; PRESSED[key] = true;
+    heldKeys.add(key);
+    btn.classList.add('act');
+  };
+  const release = (ev) => {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    KEYS[key] = false;
+    heldKeys.delete(key);
+    btn.classList.remove('act');
+  };
+  btn.addEventListener('touchstart', press, { passive: false });
+  btn.addEventListener('touchend', release, { passive: false });
+  btn.addEventListener('touchcancel', release, { passive: false });
+  btn.addEventListener('mousedown', press);
+  btn.addEventListener('mouseup', release);
+  btn.addEventListener('mouseleave', release);
+  // bloqueia menu de contexto / drag
+  btn.addEventListener('contextmenu', e => e.preventDefault());
+}
+document.querySelectorAll('.tbtn').forEach(bindTbtn);
+
+// adapta hint pro tipo de dispositivo
+if (IS_TOUCH) {
+  const h = document.getElementById('hint');
+  if (h) h.textContent = 'Toque ◀ ▶ p/ mover • JUMP p/ pular • FIRE p/ atirar • toque nas opções do quiz';
+}
+
+/* Atualiza classes do overlay conforme estado do jogo (chamado no loop) */
+function syncTouchUI() {
+  if (!TOUCH_EL) return;
+  const s = game && game.state;
+  const inMenu = ['menu','how','credits','intro','trans','over','win'].includes(s);
+  const inQuiz = s === 'quiz';
+  const inPlay = s === 'play';
+  TOUCH_EL.classList.toggle('in-menu', inMenu);
+  TOUCH_EL.classList.toggle('in-quiz', inQuiz);
+  const showC = inPlay && game.boss && game.boss.decryptionKeys >= 3;
+  TOUCH_EL.classList.toggle('hide-action', !showC);
+}
+
+/* Auto-fire enquanto segura X */
+function tickHeldRepeats() {
+  if (heldKeys.has('x')) PRESSED['x'] = true;
+}
+
+/* ----- CANVAS TAP — pros menus, intro, quiz, telas finais ---------------- */
+function canvasPos(clientX, clientY) {
+  const rect = CANVAS.getBoundingClientRect();
+  const sx = W / rect.width, sy = H / rect.height;
+  return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
+}
+function handleCanvasTap(p) {
+  Audio.init();
+  switch (game.state) {
+    case 'menu': {
+      // detecta opção tocada (rects do drawMenu)
+      for (let i=0;i<3;i++) {
+        const y = 350 + i*42;
+        if (p.x >= W/2-140 && p.x <= W/2+140 && p.y >= y-22 && p.y <= y+10) {
+          game.menuSel = i; PRESSED['enter'] = true; return;
+        }
+      }
+      if (p.y < 320) PRESSED['enter'] = true; // tap no logo = confirma seleção atual
+      break;
+    }
+    case 'quiz': {
+      if (!game.quiz) return;
+      if (game.quiz.locked) return; // tap ignorado enquanto mostra resultado
+      const bw = 700, bh = 360;
+      const bx = (W-bw)/2, by = (H-bh)/2 - 10;
+      for (let i=0;i<4;i++) {
+        const ay = by + 150 + i*40;
+        if (p.x >= bx+16 && p.x <= bx+bw-16 && p.y >= ay && p.y <= ay+32) {
+          game.quiz.selected = i; PRESSED['enter'] = true; return;
+        }
+      }
+      break;
+    }
+    case 'how': case 'credits': case 'intro':
+    case 'trans': case 'over': case 'win':
+      PRESSED['enter'] = true; break;
+  }
+}
+CANVAS.addEventListener('touchstart', e => {
+  if (e.target !== CANVAS) return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  handleCanvasTap(canvasPos(t.clientX, t.clientY));
+}, { passive: false });
+CANVAS.addEventListener('mousedown', e => {
+  // só responde se não veio de um botão touch (que já consome o evento)
+  handleCanvasTap(canvasPos(e.clientX, e.clientY));
+});
+
+/* ----- AUDIO (Web Audio API, chiptune sintetizado) ------------------------ */
+const Audio = (() => {
+  let ctx = null, muted = false, musicGain = null, sfxGain = null;
+  let musicOsc = null, musicLfo = null, musicTimer = 0, musicNotes = [], musicIdx = 0;
+  let musicBpm = 130;
+  let currentTune = null;
+
+  function init() {
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    musicGain = ctx.createGain(); musicGain.gain.value = 0.15; musicGain.connect(ctx.destination);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = 0.30; sfxGain.connect(ctx.destination);
+  }
+  function noteHz(n) { return 440 * Math.pow(2, (n - 69) / 12); }
+  function beep(freq, dur=0.08, type='square', vol=0.5, attack=0.005) {
+    if (!ctx || muted) return;
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(vol, ctx.currentTime + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    o.connect(g); g.connect(sfxGain);
+    o.start(); o.stop(ctx.currentTime + dur + 0.02);
+  }
+  function noise(dur=0.2, vol=0.3, hp=2000) {
+    if (!ctx || muted) return;
+    const bufSize = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random()*2-1) * (1 - i/bufSize);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = vol;
+    const f = ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value = hp;
+    src.connect(f); f.connect(g); g.connect(sfxGain);
+    src.start();
+  }
+  // SFX presets
+  const sfx = {
+    jump:   () => beep(660, 0.10, 'square', 0.4),
+    djump:  () => { beep(660,0.06,'square',0.3); setTimeout(()=>beep(990,0.10,'square',0.4),50); },
+    coin:   () => { beep(880,0.05,'square',0.4); setTimeout(()=>beep(1320,0.10,'square',0.4),60); },
+    hit:    () => { noise(0.15, 0.4, 800); beep(150, 0.15, 'sawtooth', 0.4); },
+    correct:() => { beep(523,0.08,'triangle',0.4); setTimeout(()=>beep(659,0.08,'triangle',0.4),90); setTimeout(()=>beep(784,0.18,'triangle',0.4),180); },
+    wrong:  () => { beep(220,0.18,'sawtooth',0.4); setTimeout(()=>beep(170,0.25,'sawtooth',0.4),120); },
+    shoot:  () => beep(1200, 0.05, 'square', 0.25),
+    power:  () => { for (let i=0;i<5;i++) setTimeout(()=>beep(440+i*120,0.07,'square',0.3), i*40); },
+    portal: () => { for (let i=0;i<8;i++) setTimeout(()=>beep(330+i*80,0.10,'triangle',0.3), i*60); },
+    boss:   () => { for (let i=0;i<6;i++) setTimeout(()=>beep(100+i*20,0.20,'sawtooth',0.4), i*100); },
+    select: () => beep(700, 0.04, 'square', 0.3),
+  };
+  // Music: sequência de notas MIDI por fase
+  const tunes = {
+    1: [60, 64, 67, 64, 65, 69, 65, 64, 62, 65, 67, 65, 60, 64, 67, 72],
+    2: [55, 58, 62, 58, 60, 63, 65, 63, 58, 60, 62, 60, 55, 58, 62, 67],
+    3: [50, 53, 56, 53, 55, 58, 62, 58, 51, 55, 58, 55, 48, 51, 55, 60],
+    menu:[60, 64, 67, 72, 67, 64, 65, 69, 72, 76, 72, 69, 67, 64, 60, 64],
+    boss:[36, 39, 43, 39, 36, 41, 44, 41, 38, 41, 45, 41, 36, 39, 43, 48],
+  };
+  function setMusic(name) {
+    if (currentTune === name) return; // já tocando, não reinicia
+    currentTune = name;
+    musicNotes = tunes[name] || tunes[1];
+    musicIdx = 0; musicTimer = 0;
+    musicBpm = (name === 'boss') ? 160 : 130;
+  }
+  function tickMusic(dt) {
+    if (!ctx || muted) return;
+    musicTimer -= dt;
+    if (musicTimer <= 0) {
+      const beat = 60 / musicBpm / 2; // colcheia
+      musicTimer = beat;
+      const n = musicNotes[musicIdx % musicNotes.length];
+      const freq = noteHz(n);
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0, ctx.currentTime);
+      g.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + beat*0.9);
+      o.connect(g); g.connect(musicGain);
+      o.start(); o.stop(ctx.currentTime + beat);
+      // bass (1 oitava abaixo, a cada 2)
+      if (musicIdx % 2 === 0) {
+        const b = ctx.createOscillator(); const bg = ctx.createGain();
+        b.type = 'triangle'; b.frequency.value = freq/2;
+        bg.gain.setValueAtTime(0, ctx.currentTime);
+        bg.gain.linearRampToValueAtTime(0.22, ctx.currentTime + 0.01);
+        bg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + beat*1.6);
+        b.connect(bg); bg.connect(musicGain);
+        b.start(); b.stop(ctx.currentTime + beat*2);
+      }
+      musicIdx++;
+    }
+  }
+  function toggleMute() { muted = !muted; }
+  function isMuted() { return muted; }
+  return { init, sfx, tickMusic, setMusic, toggleMute, isMuted };
+})();
+
+/* ----- UTIL --------------------------------------------------------------- */
+const rand = (a,b) => a + Math.random()*(b-a);
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+function rectsOverlap(a, b) {
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+
+/* ----- PARTÍCULAS --------------------------------------------------------- */
+class Particle {
+  constructor(x,y,vx,vy,life,color,size=2,gravity=0.0) {
+    this.x=x; this.y=y; this.vx=vx; this.vy=vy;
+    this.life=life; this.max=life; this.color=color; this.size=size;
+    this.gravity=gravity;
+  }
+  update(dt) {
+    this.x += this.vx*dt; this.y += this.vy*dt;
+    this.vy += this.gravity*dt;
+    this.life -= dt;
+  }
+  draw(cam) {
+    const a = clamp(this.life/this.max, 0, 1);
+    CTX.globalAlpha = a;
+    CTX.fillStyle = this.color;
+    CTX.fillRect((this.x-cam.x)|0, (this.y-cam.y)|0, this.size, this.size);
+    CTX.globalAlpha = 1;
+  }
+}
+const particles = [];
+function spawnBurst(x,y, count, color, speed=120, life=0.6, size=2, gravity=200) {
+  for (let i=0;i<count;i++) {
+    const a = Math.random()*Math.PI*2;
+    const s = rand(speed*0.3, speed);
+    particles.push(new Particle(x,y, Math.cos(a)*s, Math.sin(a)*s, life, color, size, gravity));
+  }
+}
+function spawnTrail(x,y,color,life=0.3) {
+  particles.push(new Particle(x,y, rand(-20,20), rand(-30,-5), life, color, 2, 50));
+}
+
+/* ----- SCREEN SHAKE ------------------------------------------------------- */
+let shake = 0;
+function addShake(v) { shake = Math.min(20, shake + v); }
+
+/* ----- BANCO DE PERGUNTAS (30 questões reais) ----------------------------- */
+const QUESTIONS = [
+  // -------- FÁCIL (fase 1) --------
+  { d:1, q:'O que é phishing?',
+    a:['Roubar dados com mensagens falsas que se passam por confiáveis',
+       'Limpar arquivos temporários do sistema',
+       'Otimizar o desempenho da rede',
+       'Atualizar drivers automaticamente'],
+    c:0, e:'Phishing usa engenharia social via e-mail/SMS/sites falsos para enganar a vítima e roubar credenciais.' },
+  { d:1, q:'Para que serve a autenticação de dois fatores (2FA)?',
+    a:['Acelerar o login do usuário',
+       'Adicionar uma segunda prova de identidade além da senha',
+       'Substituir o uso de senhas',
+       'Criptografar o disco rígido'],
+    c:1, e:'2FA combina algo que você sabe (senha) com algo que você tem (token/app), reduzindo o impacto do roubo de senha.' },
+  { d:1, q:'Qual destas é considerada uma SENHA FORTE?',
+    a:['123456', 'senha123', 'Tr0v@o_2026!9z', 'meunome2026'],
+    c:2, e:'Senhas fortes têm pelo menos 12 caracteres, com letras maiúsculas/minúsculas, números e símbolos, e não usam palavras de dicionário.' },
+  { d:1, q:'O que um FIREWALL faz, basicamente?',
+    a:['Cura vírus do computador',
+       'Filtra tráfego de rede com base em regras',
+       'Cria backups automáticos',
+       'Aumenta a velocidade da internet'],
+    c:1, e:'Firewall controla pacotes entrando/saindo da rede conforme políticas (origem, destino, porta, protocolo).' },
+  { d:1, q:'O que o "S" no HTTPS significa em termos de segurança?',
+    a:['Que o site é mais rápido',
+       'Que a comunicação é criptografada via TLS',
+       'Que o site é gratuito',
+       'Que ele aceita pagamento'],
+    c:1, e:'HTTPS é HTTP sobre TLS — a sessão é criptografada e a identidade do servidor é validada pelo certificado.' },
+  { d:1, q:'O que é MALWARE?',
+    a:['Hardware com defeito',
+       'Qualquer software malicioso (vírus, trojan, ransomware…)',
+       'Um navegador antigo',
+       'Sistema operacional sem licença'],
+    c:1, e:'"Mal-ware" = software malicioso. Inclui vírus, worms, trojans, spyware, ransomware, rootkits e adware.' },
+  { d:1, q:'Para que serve uma VPN?',
+    a:['Aumentar a memória RAM',
+       'Criar um túnel criptografado entre cliente e rede',
+       'Trocar o IP físico do roteador',
+       'Substituir o antivírus'],
+    c:1, e:'VPN encapsula e criptografa o tráfego entre o dispositivo e o gateway, protegendo a confidencialidade em redes não confiáveis.' },
+  { d:1, q:'O que é ENGENHARIA SOCIAL?',
+    a:['Manipular pessoas para que entreguem informações ou acessos',
+       'Construir redes sociais corporativas',
+       'Tipo de criptografia simétrica',
+       'Padrão de cabeamento estruturado'],
+    c:0, e:'Engenharia social explora a psicologia humana (urgência, autoridade, medo) em vez de falhas técnicas.' },
+  { d:1, q:'Por que fazer BACKUP é uma defesa contra ransomware?',
+    a:['Porque acelera o disco',
+       'Porque permite restaurar dados sem pagar o resgate',
+       'Porque criptografa o tráfego',
+       'Porque bloqueia anexos'],
+    c:1, e:'Com backups offline, íntegros e testados, você restaura os dados após um ataque sem ceder ao chantageador.' },
+  { d:1, q:'O que é um ANTIVÍRUS, em essência?',
+    a:['Um app de mensagens',
+       'Um software que detecta e remove códigos maliciosos',
+       'Um tipo de firewall de rede',
+       'Um servidor de e-mail'],
+    c:1, e:'Antivírus usa assinaturas e heurística/comportamento para identificar e neutralizar malwares.' },
+
+  // -------- MÉDIO (fase 2) --------
+  { d:2, q:'O que é SQL INJECTION?',
+    a:['Injetar comandos SQL via entradas mal validadas',
+       'Conectar dois bancos de dados',
+       'Acelerar consultas no SGBD',
+       'Compactar tabelas SQL'],
+    c:0, e:'SQLi explora concatenação de strings em queries. Defesa: prepared statements e validação/escape.' },
+  { d:2, q:'O que é XSS (Cross-Site Scripting)?',
+    a:['Roubar cookies via ataque no servidor de DNS',
+       'Executar scripts maliciosos no navegador da vítima',
+       'Forçar reload de páginas concorrentes',
+       'Compactar JavaScript no cliente'],
+    c:1, e:'XSS injeta JS no contexto de outra origem. Mitigado com escape de saída e Content-Security-Policy.' },
+  { d:2, q:'A tríade CIA da segurança da informação é:',
+    a:['Confidencialidade, Integridade, Disponibilidade',
+       'Criptografia, Identidade, Autenticação',
+       'Controle, Inspeção, Auditoria',
+       'Confiabilidade, Integridade, Acesso'],
+    c:0, e:'CIA = Confidentiality, Integrity, Availability — os três pilares clássicos de SI.' },
+  { d:2, q:'Qual a diferença essencial entre CRIPTOGRAFIA e HASHING?',
+    a:['Criptografia é reversível com a chave; hashing é uma função de mão única',
+       'Hashing usa chave e criptografia não',
+       'Hashing é mais lento que criptografia simétrica',
+       'Não há diferença prática'],
+    c:0, e:'Cifras (AES, RSA) cifram e decifram. Hashes (SHA-256) são unidirecionais e usados para integridade/armazenar senhas.' },
+  { d:2, q:'Para que serve um certificado SSL/TLS num site?',
+    a:['Acelerar o carregamento',
+       'Autenticar a identidade do servidor e habilitar criptografia',
+       'Provar que o servidor está atualizado',
+       'Garantir que o site não tem bugs'],
+    c:1, e:'O certificado, assinado por uma CA confiável, prova a identidade do domínio e fornece a chave pública para o handshake TLS.' },
+  { d:2, q:'O que é um ataque MITM (Man-in-the-Middle)?',
+    a:['Espionar/alterar comunicação entre duas partes que pensam estar a sós',
+       'Atacar o gerente de TI presencialmente',
+       'Quebrar um disco a meio caminho',
+       'Forçar o usuário a usar um meio físico'],
+    c:0, e:'O atacante se posiciona no meio do canal (Wi-Fi público, ARP spoof) e intercepta tráfego não autenticado/criptografado.' },
+  { d:2, q:'BRUTE FORCE em autenticação consiste em:',
+    a:['Tentar todas as combinações possíveis até acertar',
+       'Forçar reinicialização do servidor',
+       'Quebrar fisicamente o leitor biométrico',
+       'Roubar tokens físicos'],
+    c:0, e:'Força bruta testa exaustivamente senhas/chaves. Mitigações: rate limiting, bloqueio, MFA, senhas longas.' },
+  { d:2, q:'O que caracteriza um RANSOMWARE?',
+    a:['Criptografa arquivos da vítima e exige resgate',
+       'Apenas exibe propagandas',
+       'Acelera o sistema operacional',
+       'Compacta backups antigos'],
+    c:0, e:'Ransomware cifra os dados e/ou exfiltra, exigindo pagamento (frequentemente em cripto) para devolver acesso.' },
+  { d:2, q:'O que é o princípio do MENOR PRIVILÉGIO?',
+    a:['Cada usuário/processo recebe apenas os privilégios mínimos necessários',
+       'Administradores têm acesso a tudo o tempo todo',
+       'Bloquear todas as contas por padrão',
+       'Conceder acesso conforme antiguidade'],
+    c:0, e:'Least privilege reduz superfície de ataque: se uma conta é comprometida, o dano é limitado ao que ela podia fazer.' },
+  { d:2, q:'Qual a função principal de um IDS (Intrusion Detection System)?',
+    a:['Bloquear todo tráfego suspeito automaticamente',
+       'Monitorar e alertar sobre atividades suspeitas',
+       'Substituir o firewall',
+       'Atualizar assinaturas de antivírus'],
+    c:1, e:'IDS detecta e alerta. Quem BLOQUEIA ativamente é o IPS (Intrusion Prevention System).' },
+
+  // -------- DIFÍCIL (fase 3) --------
+  { d:3, q:'A vulnerabilidade HEARTBLEED (CVE-2014-0160) atingiu:',
+    a:['OpenSSL — extensão heartbeat do TLS',
+       'O kernel Linux',
+       'O navegador Internet Explorer',
+       'O protocolo SMB do Windows'],
+    c:0, e:'Heartbleed era um buffer over-read no heartbeat do OpenSSL, expondo até 64KB de memória do servidor por requisição.' },
+  { d:3, q:'LOG4SHELL (CVE-2021-44228) explora:',
+    a:['Buffer overflow no kernel Linux',
+       'Lookup JNDI no Log4j permitindo RCE',
+       'Falha no protocolo HTTP/3',
+       'Bug do BIOS UEFI'],
+    c:1, e:'Strings tipo ${jndi:ldap://...} no log faziam o Log4j buscar e executar classes remotas — RCE crítico (CVSS 10).' },
+  { d:3, q:'ETERNALBLUE explora qual protocolo?',
+    a:['SSH', 'SMBv1', 'HTTP', 'DNS'],
+    c:1, e:'EternalBlue (MS17-010) explorou o SMBv1 do Windows e foi usado pelo WannaCry e NotPetya em 2017.' },
+  { d:3, q:'O que é uma vulnerabilidade ZERO-DAY?',
+    a:['Vulnerabilidade conhecida e sem patch há mais de um ano',
+       'Falha desconhecida do fornecedor e ainda sem patch público',
+       'Falha que só aparece à meia-noite',
+       'Bug que ocorre na primeira instalação'],
+    c:1, e:'Zero-day = "zero dias" desde a descoberta pelo fornecedor: ainda não há correção disponível, o que a torna especialmente perigosa.' },
+  { d:3, q:'O que é CSRF (Cross-Site Request Forgery)?',
+    a:['Forçar o usuário autenticado a executar ações indesejadas em outro site',
+       'Falsificar requisições no servidor DNS',
+       'Quebrar tokens TLS',
+       'Modificar o User-Agent do navegador'],
+    c:0, e:'CSRF abusa da sessão da vítima. Mitigações: tokens anti-CSRF, SameSite cookies e checagem de origem/referer.' },
+  { d:3, q:'O que faz um SIEM?',
+    a:['Substitui o firewall na borda',
+       'Coleta, correlaciona logs e gera alertas de segurança',
+       'Faz somente backup criptografado',
+       'Atualiza o antivírus do parque'],
+    c:1, e:'SIEM (Security Information and Event Management) agrega logs de várias fontes, correlaciona eventos e alimenta o SOC.' },
+  { d:3, q:'O OWASP Top 10 é:',
+    a:['Lista das 10 melhores ferramentas de segurança',
+       'Ranking dos 10 maiores hackers',
+       'Lista dos riscos mais críticos em aplicações web',
+       'Padrão de criptografia da NIST'],
+    c:2, e:'A OWASP publica a Top 10 com as categorias de risco mais comuns em apps web (ex.: Broken Access Control, Injection, etc.).' },
+  { d:3, q:'Para que serve o SALT em hashing de senhas?',
+    a:['Evitar rainbow tables e tornar hashes únicos por usuário',
+       'Acelerar o cálculo do hash',
+       'Substituir o algoritmo de hash',
+       'Diminuir o tamanho do hash'],
+    c:0, e:'Salt é um valor aleatório por usuário concatenado à senha antes do hash, neutralizando rainbow tables e duplicidades.' },
+  { d:3, q:'Um ataque DDoS busca principalmente:',
+    a:['Roubar senhas',
+       'Esgotar recursos e indisponibilizar o serviço',
+       'Cifrar arquivos da vítima',
+       'Modificar registros DNS'],
+    c:1, e:'DDoS (Distributed Denial of Service) ataca a Disponibilidade da CIA, sobrecarregando o alvo com tráfego de várias origens.' },
+  { d:3, q:'Um KEYLOGGER faz o quê?',
+    a:['Registra as teclas digitadas pela vítima',
+       'Bloqueia o teclado físico',
+       'Acelera o digitar',
+       'Tradução automática de teclas'],
+    c:0, e:'Keyloggers (software ou hardware) capturam o teclado para roubar credenciais, mensagens e tokens.' },
+];
+
+/* ----- LEVELS (3 fases) --------------------------------------------------- */
+/*
+   Cada nível: { theme, music, width, ground, platforms[], enemies[], powerups[], goalX }
+   plataformas: {x,y,w,h}
+   enemies: {type, x, y, range?}
+   powerups: {type, x, y}
+*/
+const GROUND_Y = H - 60; // base do solo
+
+function buildLevel(num) {
+  if (num === 1) {
+    return {
+      num: 1,
+      name: 'A Rede Local',
+      theme: 'matrix',
+      music: 1,
+      width: 3600,
+      ground: GROUND_Y,
+      gaps: [ {x: 700, w: 120}, {x: 1500, w: 140}, {x: 2400, w: 160} ],
+      platforms: [
+        {x: 350, y: GROUND_Y-110, w: 140, h: 16},
+        {x: 550, y: GROUND_Y-180, w: 100, h: 16},
+        {x: 820, y: GROUND_Y-140, w: 140, h: 16},
+        {x: 1100, y: GROUND_Y-180, w: 120, h: 16},
+        {x: 1320, y: GROUND_Y-100, w: 120, h: 16},
+        {x: 1700, y: GROUND_Y-160, w: 180, h: 16},
+        {x: 1980, y: GROUND_Y-220, w: 120, h: 16},
+        {x: 2200, y: GROUND_Y-140, w: 140, h: 16},
+        {x: 2600, y: GROUND_Y-120, w: 120, h: 16},
+        {x: 2820, y: GROUND_Y-200, w: 140, h: 16},
+        {x: 3100, y: GROUND_Y-130, w: 160, h: 16},
+      ],
+      enemies: [
+        {t:'goomba', x: 450, y: GROUND_Y-26},
+        {t:'phish',  x: 900, y: GROUND_Y-180},
+        {t:'goomba', x: 1200, y: GROUND_Y-26},
+        {t:'goomba', x: 1750, y: GROUND_Y-186},
+        {t:'phish',  x: 2050, y: GROUND_Y-260},
+        {t:'goomba', x: 2300, y: GROUND_Y-26},
+        {t:'ddos',   x: 2700, y: GROUND_Y-220},
+        {t:'goomba', x: 3000, y: GROUND_Y-26},
+      ],
+      powerups: [
+        {t:'patch', x: 380, y: GROUND_Y-150},
+        {t:'patch', x: 570, y: GROUND_Y-220},
+        {t:'patch', x: 850, y: GROUND_Y-180},
+        {t:'token', x: 1130, y: GROUND_Y-230}, // double jump
+        {t:'patch', x: 1340, y: GROUND_Y-140},
+        {t:'patch', x: 1730, y: GROUND_Y-200},
+        {t:'patch', x: 1760, y: GROUND_Y-200},
+        {t:'patch', x: 1790, y: GROUND_Y-200},
+        {t:'shield',x: 2020, y: GROUND_Y-270},
+        {t:'patch', x: 2230, y: GROUND_Y-180},
+        {t:'heart', x: 2850, y: GROUND_Y-250},
+        {t:'patch', x: 3140, y: GROUND_Y-170},
+        {t:'patch', x: 3300, y: GROUND_Y-90},
+      ],
+      goalX: 3450,
+    };
+  }
+  if (num === 2) {
+    return {
+      num: 2,
+      name: 'O Servidor Profundo',
+      theme: 'server',
+      music: 2,
+      width: 4200,
+      ground: GROUND_Y,
+      gaps: [ {x: 600, w: 140}, {x: 1400, w: 160}, {x: 2300, w: 180}, {x: 3200, w: 160} ],
+      platforms: [
+        {x: 280, y: GROUND_Y-130, w: 120, h: 16},
+        {x: 450, y: GROUND_Y-200, w: 100, h: 16},
+        {x: 640, y: GROUND_Y-260, w: 100, h: 16},
+        {x: 820, y: GROUND_Y-180, w: 120, h: 16},
+        {x: 1050, y: GROUND_Y-130, w: 120, h: 16},
+        {x: 1250, y: GROUND_Y-210, w: 140, h: 16},
+        {x: 1500, y: GROUND_Y-160, w: 100, h: 16},
+        {x: 1680, y: GROUND_Y-260, w: 140, h: 16},
+        {x: 1900, y: GROUND_Y-180, w: 120, h: 16},
+        {x: 2100, y: GROUND_Y-120, w: 120, h: 16},
+        {x: 2360, y: GROUND_Y-180, w: 100, h: 16},
+        {x: 2540, y: GROUND_Y-260, w: 100, h: 16},
+        {x: 2750, y: GROUND_Y-200, w: 140, h: 16},
+        {x: 2980, y: GROUND_Y-140, w: 120, h: 16},
+        {x: 3260, y: GROUND_Y-220, w: 140, h: 16},
+        {x: 3500, y: GROUND_Y-160, w: 140, h: 16},
+        {x: 3760, y: GROUND_Y-110, w: 140, h: 16},
+      ],
+      enemies: [
+        {t:'goomba', x: 350, y: GROUND_Y-26},
+        {t:'phish',  x: 680, y: GROUND_Y-340},
+        {t:'kraken', x: 900, y: GROUND_Y-26},
+        {t:'ddos',   x: 1100, y: GROUND_Y-250},
+        {t:'goomba', x: 1300, y: GROUND_Y-256},
+        {t:'phish',  x: 1550, y: GROUND_Y-300},
+        {t:'kraken', x: 1820, y: GROUND_Y-26},
+        {t:'ddos',   x: 2050, y: GROUND_Y-280},
+        {t:'goomba', x: 2200, y: GROUND_Y-26},
+        {t:'phish',  x: 2580, y: GROUND_Y-340},
+        {t:'kraken', x: 2820, y: GROUND_Y-26},
+        {t:'goomba', x: 3050, y: GROUND_Y-26},
+        {t:'ddos',   x: 3350, y: GROUND_Y-300},
+        {t:'kraken', x: 3650, y: GROUND_Y-26},
+      ],
+      powerups: [
+        {t:'patch', x: 310, y: GROUND_Y-170},
+        {t:'patch', x: 480, y: GROUND_Y-240},
+        {t:'token', x: 670, y: GROUND_Y-300},
+        {t:'patch', x: 850, y: GROUND_Y-220},
+        {t:'patch', x: 1080, y: GROUND_Y-170},
+        {t:'shield',x: 1280, y: GROUND_Y-250},
+        {t:'patch', x: 1530, y: GROUND_Y-200},
+        {t:'patch', x: 1710, y: GROUND_Y-300},
+        {t:'cloak', x: 1930, y: GROUND_Y-220},
+        {t:'patch', x: 2130, y: GROUND_Y-160},
+        {t:'patch', x: 2390, y: GROUND_Y-220},
+        {t:'patch', x: 2570, y: GROUND_Y-300},
+        {t:'heart', x: 2780, y: GROUND_Y-240},
+        {t:'patch', x: 3010, y: GROUND_Y-180},
+        {t:'patch', x: 3290, y: GROUND_Y-260},
+        {t:'token', x: 3530, y: GROUND_Y-200},
+        {t:'patch', x: 3790, y: GROUND_Y-150},
+      ],
+      goalX: 4050,
+    };
+  }
+  // Fase 3 — Dark Web (com boss)
+  return {
+    num: 3,
+    name: 'A Dark Web',
+    theme: 'darkweb',
+    music: 3,
+    width: 4800,
+    ground: GROUND_Y,
+    gaps: [ {x: 500, w: 160}, {x: 1200, w: 180}, {x: 1900, w: 180}, {x: 2700, w: 200}, {x: 3500, w: 180} ],
+    platforms: [
+      {x: 250, y: GROUND_Y-160, w: 100, h: 16},
+      {x: 420, y: GROUND_Y-240, w: 100, h: 16},
+      {x: 590, y: GROUND_Y-320, w: 100, h: 16},
+      {x: 760, y: GROUND_Y-220, w: 120, h: 16},
+      {x: 950, y: GROUND_Y-140, w: 120, h: 16},
+      {x: 1170, y: GROUND_Y-220, w: 100, h: 16},
+      {x: 1350, y: GROUND_Y-300, w: 100, h: 16},
+      {x: 1550, y: GROUND_Y-200, w: 120, h: 16},
+      {x: 1780, y: GROUND_Y-140, w: 120, h: 16},
+      {x: 1980, y: GROUND_Y-240, w: 100, h: 16},
+      {x: 2180, y: GROUND_Y-180, w: 120, h: 16},
+      {x: 2380, y: GROUND_Y-260, w: 120, h: 16},
+      {x: 2600, y: GROUND_Y-160, w: 120, h: 16},
+      {x: 2840, y: GROUND_Y-220, w: 140, h: 16},
+      {x: 3080, y: GROUND_Y-130, w: 120, h: 16},
+      {x: 3300, y: GROUND_Y-230, w: 120, h: 16},
+      {x: 3520, y: GROUND_Y-160, w: 120, h: 16},
+      {x: 3750, y: GROUND_Y-260, w: 140, h: 16},
+      // Arena do boss (plana)
+    ],
+    enemies: [
+      {t:'goomba', x: 320, y: GROUND_Y-26},
+      {t:'phish',  x: 480, y: GROUND_Y-300},
+      {t:'kraken', x: 700, y: GROUND_Y-26},
+      {t:'ddos',   x: 900, y: GROUND_Y-260},
+      {t:'goomba', x: 1050, y: GROUND_Y-26},
+      {t:'phish',  x: 1280, y: GROUND_Y-330},
+      {t:'kraken', x: 1450, y: GROUND_Y-26},
+      {t:'ddos',   x: 1620, y: GROUND_Y-280},
+      {t:'goomba', x: 1820, y: GROUND_Y-26},
+      {t:'dragon', x: 2050, y: GROUND_Y-320},
+      {t:'kraken', x: 2300, y: GROUND_Y-26},
+      {t:'phish',  x: 2470, y: GROUND_Y-340},
+      {t:'ddos',   x: 2680, y: GROUND_Y-300},
+      {t:'goomba', x: 2900, y: GROUND_Y-26},
+      {t:'kraken', x: 3150, y: GROUND_Y-26},
+      {t:'phish',  x: 3380, y: GROUND_Y-320},
+      {t:'dragon', x: 3600, y: GROUND_Y-320},
+      // Boss spawnado por scripting ao final
+    ],
+    powerups: [
+      {t:'patch', x: 270, y: GROUND_Y-200},
+      {t:'patch', x: 450, y: GROUND_Y-280},
+      {t:'token', x: 620, y: GROUND_Y-360},
+      {t:'shield',x: 790, y: GROUND_Y-260},
+      {t:'patch', x: 980, y: GROUND_Y-180},
+      {t:'cloak', x: 1190, y: GROUND_Y-260},
+      {t:'patch', x: 1380, y: GROUND_Y-340},
+      {t:'heart', x: 1810, y: GROUND_Y-180},
+      {t:'patch', x: 2010, y: GROUND_Y-280},
+      {t:'shield',x: 2210, y: GROUND_Y-220},
+      {t:'patch', x: 2410, y: GROUND_Y-300},
+      {t:'token', x: 2630, y: GROUND_Y-200},
+      {t:'patch', x: 2870, y: GROUND_Y-260},
+      {t:'heart', x: 3110, y: GROUND_Y-170},
+      {t:'patch', x: 3330, y: GROUND_Y-270},
+      {t:'shield',x: 3780, y: GROUND_Y-300},
+    ],
+    goalX: 4650,
+    bossAt: 4200, // spawn do boss
+  };
+}
+
+/* ----- PLAYER ------------------------------------------------------------- */
+class Player {
+  constructor(x,y) {
+    this.x=x; this.y=y; this.w=24; this.h=34;
+    this.vx=0; this.vy=0;
+    this.dir=1;
+    this.onGround=false;
+    this.jumpsLeft=1;
+    this.lives=3;
+    this.invuln=0;
+    this.shieldT=0;
+    this.tokenT=0;   // double jump
+    this.cloakT=0;   // invisibilidade
+    this.shootCd=0;
+    this.anim=0;
+    this.dead=false;
+  }
+  get hitbox() { return {x:this.x, y:this.y, w:this.w, h:this.h}; }
+
+  shoot(bullets) {
+    if (this.shootCd>0) return;
+    const tripleShot = game.boss && game.boss.patchZeroBuffT > 0;
+    this.shootCd = tripleShot ? 0.18 : 0.30;
+    const bx = this.x+(this.dir>0?this.w:-8);
+    const by = this.y+10;
+    if (tripleShot) {
+      bullets.push({x: bx, y: by-8, w: 12, h: 8, vx: this.dir*560, vy: -60, life: 0.9, friendly:true, dmg: 2, color:'#fc0'});
+      bullets.push({x: bx, y: by,   w: 12, h: 8, vx: this.dir*620, vy:   0, life: 0.9, friendly:true, dmg: 2, color:'#fc0'});
+      bullets.push({x: bx, y: by+8, w: 12, h: 8, vx: this.dir*560, vy:  60, life: 0.9, friendly:true, dmg: 2, color:'#fc0'});
+    } else {
+      bullets.push({x: bx, y: by, w: 10, h: 6, vx: this.dir*520, vy:0, life: 0.8, friendly:true, dmg: 1});
+    }
+    Audio.sfx.shoot();
+  }
+
+  update(dt, level, bullets) {
+    if (this.dead) return;
+    const left = KEYS['arrowleft']||KEYS['a'];
+    const right= KEYS['arrowright']||KEYS['d'];
+    const jump = pollPressed(' ')||pollPressed('w')||pollPressed('arrowup');
+    const fire = pollPressed('x');
+    const speed = 220;
+    if (left) { this.vx = -speed; this.dir = -1; }
+    else if (right) { this.vx = speed; this.dir = 1; }
+    else this.vx = 0;
+
+    if (jump) {
+      const maxJumps = (this.tokenT>0)?2:1;
+      if (this.onGround) { this.vy = -640; this.onGround=false; this.jumpsLeft = maxJumps-1; Audio.sfx.jump();
+        spawnBurst(this.x+this.w/2, this.y+this.h, 8, '#0ff', 80, 0.3, 2, 200);
+      }
+      else if (this.jumpsLeft>0) {
+        this.vy = -580; this.jumpsLeft--; Audio.sfx.djump();
+        spawnBurst(this.x+this.w/2, this.y+this.h, 14, '#ff0', 120, 0.4, 2, 200);
+      }
+    }
+    // pulo variável: soltar a tecla cedo encurta o pulo (sensação Mario)
+    if (!(KEYS[' ']||KEYS['w']||KEYS['arrowup']) && this.vy < -200) {
+      this.vy += 1600*dt;
+    }
+    if (fire) this.shoot(bullets);
+
+    // gravidade
+    this.vy += 1200*dt;
+    if (this.vy>720) this.vy = 720;
+
+    // movimento horizontal + colisão
+    this.x += this.vx*dt;
+    this.collide(level, true);
+    // vertical
+    this.y += this.vy*dt;
+    this.onGround = false;
+    this.collide(level, false);
+
+    // checa cair em buraco
+    if (this.y > H + 60) {
+      this.takeHit(true);
+      this.respawn(level);
+    }
+
+    // limites do mundo
+    if (this.x < 0) this.x = 0;
+    if (this.x + this.w > level.width) this.x = level.width - this.w;
+
+    // timers
+    this.invuln = Math.max(0, this.invuln - dt);
+    this.shieldT = Math.max(0, this.shieldT - dt);
+    this.tokenT = Math.max(0, this.tokenT - dt);
+    this.cloakT = Math.max(0, this.cloakT - dt);
+    this.shootCd = Math.max(0, this.shootCd - dt);
+
+    this.anim += dt * (Math.abs(this.vx)>10 ? 8 : 3);
+  }
+
+  collide(level, horizontal) {
+    // chão
+    if (!horizontal) {
+      if (this.y + this.h > level.ground) {
+        // checa buracos
+        const cx = this.x + this.w/2;
+        let inGap = false;
+        for (const g of level.gaps) if (cx > g.x && cx < g.x+g.w) { inGap=true; break; }
+        if (!inGap) {
+          this.y = level.ground - this.h;
+          this.vy = 0; this.onGround = true; this.jumpsLeft = (this.tokenT>0)?1:0;
+        }
+      }
+    }
+    // plataformas
+    for (const p of level.platforms) {
+      if (!rectsOverlap(this, p)) continue;
+      if (horizontal) {
+        if (this.vx>0) this.x = p.x - this.w;
+        else if (this.vx<0) this.x = p.x + p.w;
+        this.vx = 0;
+      } else {
+        if (this.vy>0 && (this.y+this.h - this.vy*0.016) <= p.y+2) {
+          this.y = p.y - this.h; this.vy=0; this.onGround=true; this.jumpsLeft=(this.tokenT>0)?1:0;
+        } else if (this.vy<0) {
+          this.y = p.y + p.h; this.vy = 0;
+        }
+      }
+    }
+  }
+
+  respawn(level) {
+    if (this.dead) return;
+    this.x = Math.max(50, this.x - 200);
+    this.y = 100;
+    this.vx = 0; this.vy = 0;
+  }
+
+  takeHit(fromVoid=false) {
+    if (this.invuln > 0 && !fromVoid) return false;
+    if (this.shieldT > 0 && !fromVoid) {
+      this.shieldT = 0;
+      this.invuln = 0.8;
+      addShake(6); Audio.sfx.hit();
+      spawnBurst(this.x+this.w/2, this.y+this.h/2, 16, '#48f', 150, 0.6, 3);
+      return false;
+    }
+    this.lives--;
+    this.invuln = 1.5;
+    addShake(10); Audio.sfx.hit();
+    spawnBurst(this.x+this.w/2, this.y+this.h/2, 20, '#f33', 180, 0.7, 3);
+    return true;
+  }
+
+  draw(cam) {
+    if (this.dead) return;
+    const x = (this.x - cam.x)|0, y = (this.y - cam.y)|0;
+    if (this.invuln>0 && Math.floor(this.invuln*20)%2===0) return;
+    const baseAlpha = (this.cloakT>0) ? 0.4 : 1;
+    CTX.globalAlpha = baseAlpha;
+
+    // ====== PENTESTER PIXEL — sprite 24x34 ======
+    // 1. Capuz exterior (silhueta)
+    CTX.fillStyle = '#080018';
+    CTX.fillRect(x+6, y+0, 12, 2);
+    CTX.fillRect(x+4, y+2, 16, 2);
+    CTX.fillRect(x+2, y+4, 20, 3);
+    CTX.fillRect(x+0, y+7, 24, 6);
+    // ponta do capuz lateral (drape)
+    CTX.fillRect(x+0, y+12, 4, 8);
+    CTX.fillRect(x+20, y+12, 4, 8);
+
+    // 2. Borda neon ciano do capuz
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x+6, y+0, 12, 1);
+    CTX.fillRect(x+4, y+2, 2, 1);
+    CTX.fillRect(x+18, y+2, 2, 1);
+    CTX.fillRect(x+2, y+4, 1, 3);
+    CTX.fillRect(x+21, y+4, 1, 3);
+
+    // 3. Sombra interna do capuz (rosto escondido)
+    CTX.fillStyle = '#000005';
+    CTX.fillRect(x+5, y+5, 14, 9);
+
+    // 4. Visor cibernético (banda escura horizontal)
+    CTX.fillStyle = '#0a2a3a';
+    CTX.fillRect(x+5, y+8, 14, 3);
+    // olhos brilhantes ciano (LEDs)
+    CTX.fillStyle = '#0ff';
+    const eyeShift = this.dir>0 ? 1 : -1;
+    CTX.fillRect(x+8+eyeShift, y+9, 2, 1);
+    CTX.fillRect(x+14+eyeShift, y+9, 2, 1);
+    // flicker dos LEDs
+    if (Math.floor(performance.now()/300) % 4 !== 0) {
+      CTX.fillStyle = '#fff';
+      CTX.fillRect(x+8+eyeShift, y+9, 1, 1);
+      CTX.fillRect(x+14+eyeShift, y+9, 1, 1);
+    }
+
+    // 5. Boca tech (linha verde)
+    CTX.fillStyle = '#0f5';
+    CTX.fillRect(x+9, y+12, 6, 1);
+    CTX.fillStyle = '#080';
+    CTX.fillRect(x+11, y+12, 2, 1);
+
+    // 6. Pescoço sombra
+    CTX.fillStyle = '#0a0014';
+    CTX.fillRect(x+9, y+13, 6, 1);
+
+    // 7. Hoodie body (roxo)
+    CTX.fillStyle = '#4a1080';
+    CTX.fillRect(x+2, y+14, 20, 12);
+    // highlight ombros
+    CTX.fillStyle = '#6020a8';
+    CTX.fillRect(x+2, y+14, 20, 2);
+    // shadow inferior
+    CTX.fillStyle = '#2a0858';
+    CTX.fillRect(x+2, y+24, 20, 2);
+
+    // 8. Cordinhas do capuz
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x+9, y+15, 1, 5);
+    CTX.fillRect(x+14, y+15, 1, 5);
+    CTX.fillStyle = '#666';
+    CTX.fillRect(x+9, y+19, 1, 1);
+    CTX.fillRect(x+14, y+19, 1, 1);
+
+    // 9. Zíper
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x+11, y+16, 2, 9);
+    CTX.fillStyle = '#055';
+    CTX.fillRect(x+11, y+17, 2, 1);
+    CTX.fillRect(x+11, y+20, 2, 1);
+    CTX.fillRect(x+11, y+23, 2, 1);
+
+    // 10. Patch "01" no peito (estilo binário)
+    CTX.fillStyle = '#0f5';
+    CTX.font = 'bold 5px monospace';
+    CTX.fillText('01', x+4, y+22);
+    CTX.fillText('10', x+16, y+22);
+
+    // 11. Braços (mangas)
+    CTX.fillStyle = '#3a0a60';
+    CTX.fillRect(x+0, y+15, 3, 8);
+    CTX.fillRect(x+21, y+15, 3, 8);
+
+    // 12. Luvas ciano
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x+0, y+22, 3, 3);
+    CTX.fillStyle = '#088';
+    CTX.fillRect(x+0, y+22, 3, 1);
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x+21, y+22, 3, 3);
+    CTX.fillStyle = '#088';
+    CTX.fillRect(x+21, y+22, 3, 1);
+
+    // 13. Cinto preto com fivela dourada
+    CTX.fillStyle = '#000';
+    CTX.fillRect(x+2, y+26, 20, 2);
+    CTX.fillStyle = '#fc0';
+    CTX.fillRect(x+11, y+26, 2, 2);
+
+    // 14. Pernas com animação
+    const step = Math.floor(this.anim) % 2;
+    CTX.fillStyle = '#0a0a20';
+    if (!this.onGround) {
+      CTX.fillRect(x+5, y+28, 5, 3);
+      CTX.fillRect(x+14, y+28, 5, 3);
+    } else if (Math.abs(this.vx)>10) {
+      CTX.fillRect(x+5, y+28, 5, 4 + (step?0:-1));
+      CTX.fillRect(x+14, y+28, 5, 4 + (step?-1:0));
+    } else {
+      CTX.fillRect(x+5, y+28, 5, 4);
+      CTX.fillRect(x+14, y+28, 5, 4);
+    }
+
+    // 15. Botas tech com sola ciano
+    CTX.fillStyle = '#0a2a2a';
+    CTX.fillRect(x+4, y+31, 7, 3);
+    CTX.fillRect(x+13, y+31, 7, 3);
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x+4, y+33, 7, 1);
+    CTX.fillRect(x+13, y+33, 7, 1);
+
+    CTX.globalAlpha = 1;
+
+    // 16. Aura de shield
+    if (this.shieldT>0) {
+      CTX.strokeStyle = '#4af';
+      CTX.lineWidth = 2;
+      CTX.globalAlpha = 0.6 + 0.4*Math.sin(performance.now()/100);
+      CTX.beginPath();
+      CTX.arc(x+this.w/2, y+this.h/2, 24, 0, Math.PI*2);
+      CTX.stroke();
+      CTX.globalAlpha = 1;
+    }
+  }
+}
+
+/* ----- ENEMIES ------------------------------------------------------------ */
+class Enemy {
+  constructor(t,x,y) {
+    this.t=t; this.x=x; this.y=y; this.alive=true; this.t0=0;
+    this.vx=0; this.vy=0;
+    this.origX=x; this.origY=y;
+    switch(t) {
+      case 'goomba': this.w=28; this.h=26; this.vx=-50; this.hp=1; this.hpMax=1; break;
+      case 'phish':  this.w=30; this.h=30; this.hp=1; this.hpMax=1; break;
+      case 'ddos':   this.w=18; this.h=18; this.hp=1; this.hpMax=1; break;
+      case 'kraken': this.w=36; this.h=34; this.vx=-30; this.hp=2; this.hpMax=2; break;
+      case 'dragon': this.w=60; this.h=46; this.hp=3; this.hpMax=3; break;
+      case 'boss':   this.w=110; this.h=130; this.hp=30; this.hpMax=30; break;
+    }
+  }
+  get hitbox() { return {x:this.x, y:this.y, w:this.w, h:this.h}; }
+
+  update(dt, level, player, bullets) {
+    if (!this.alive) return;
+    this.t0 += dt;
+    switch(this.t) {
+      case 'goomba': {
+        this.x += this.vx*dt;
+        // gravidade leve para descer plataformas
+        this.vy += 800*dt; this.y += this.vy*dt;
+        if (this.y + this.h > level.ground) {
+          const cx = this.x + this.w/2;
+          let inGap = false;
+          for (const g of level.gaps) if (cx > g.x && cx < g.x+g.w) { inGap=true; break; }
+          if (!inGap) { this.y = level.ground - this.h; this.vy = 0; }
+        }
+        for (const p of level.platforms) {
+          if (rectsOverlap(this, p)) {
+            if (this.vy>0) { this.y = p.y - this.h; this.vy = 0; }
+          }
+        }
+        // patrulha entre buracos / plataforma
+        if (this.x < this.origX-120 && this.vx<0) this.vx = 50;
+        else if (this.x > this.origX+120 && this.vx>0) this.vx = -50;
+      } break;
+
+      case 'phish': {
+        // flutua em arco — disfarçado como pequeno envelope verde, persegue ao se aproximar
+        const dx = player.x - this.x, dy = player.y - this.y;
+        const dist = Math.hypot(dx,dy);
+        if (dist < 260) {
+          this.x += (dx/dist) * 60 * dt;
+          this.y += (dy/dist) * 50 * dt;
+        } else {
+          this.y = this.origY + Math.sin(this.t0*1.5)*30;
+          this.x = this.origX + Math.cos(this.t0*0.9)*40;
+        }
+      } break;
+
+      case 'ddos': {
+        // enxame em formação senoidal
+        this.x = this.origX + Math.cos(this.t0*2)*70 - this.t0*5;
+        this.y = this.origY + Math.sin(this.t0*4)*30;
+      } break;
+
+      case 'kraken': {
+        // anda lento, tentáculos
+        this.x += this.vx*dt;
+        if (this.x < this.origX-90 && this.vx<0) this.vx = 30;
+        else if (this.x > this.origX+90 && this.vx>0) this.vx = -30;
+        this.y = this.origY + Math.sin(this.t0*3)*4;
+      } break;
+
+      case 'dragon': {
+        // chefe de fase 3 voador: oscila e ocasionalmente atira
+        this.x = this.origX + Math.sin(this.t0*0.6)*150;
+        this.y = this.origY + Math.cos(this.t0*1.2)*40;
+        if (Math.floor(this.t0*2)%6===0 && Math.floor(this.t0*10)%4===0) {
+          // atira bala
+          if (!this._lastShoot || this.t0 - this._lastShoot > 1.5) {
+            this._lastShoot = this.t0;
+            const dx = player.x - this.x, dy = player.y - this.y;
+            const d = Math.hypot(dx,dy)||1;
+            bullets.push({x:this.x+this.w/2-4, y:this.y+this.h/2-4, w:10,h:10,
+              vx: dx/d*220, vy: dy/d*220, life: 2.5, friendly:false, color:'#f0f'});
+          }
+        }
+      } break;
+
+      case 'boss': {
+        // === Boss fight em 3 fases definidas pelo HP ===
+        const bf = game.boss;
+        const hpPct = this.hp / this.hpMax;
+        let newPhase = 1;
+        if (hpPct < 0.34) newPhase = 3;
+        else if (hpPct < 0.67) newPhase = 2;
+        if (bf && newPhase !== bf.phase) onBossPhaseChange(newPhase);
+
+        // === Buff de patch zero: boss congela 0.5s na transição ===
+        if (bf && bf.phaseChangeFreezeT > 0) {
+          this.vx = 0; this.vy = Math.min(this.vy, 0);
+          break;
+        }
+
+        // === Movimento por fase ===
+        const arenaLeft = bf ? bf.arenaLeft : 0;
+        const arenaRight = bf ? bf.arenaRight : level.width;
+        if (this.onGround) {
+          if (newPhase === 1) { this.vy = -430; this.vx = (player.x < this.x ? -90 : 90); }
+          else if (newPhase === 2) { this.vy = -520; this.vx = (player.x < this.x ? -150 : 150); }
+          else { this.vy = -600; this.vx = (player.x < this.x ? -220 : 220); }
+          this.onGround = false;
+        }
+        this.vy += 1100*dt;
+        this.x += this.vx*dt; this.y += this.vy*dt;
+        if (this.x < arenaLeft + 20) { this.x = arenaLeft + 20; this.vx = Math.abs(this.vx); }
+        if (this.x + this.w > arenaRight - 20) { this.x = arenaRight - 20 - this.w; this.vx = -Math.abs(this.vx); }
+        if (this.y + this.h > level.ground) {
+          this.y = level.ground - this.h; this.vy = 0; this.vx = 0; this.onGround = true;
+          if (newPhase === 3) addShake(4);
+        }
+
+        // === Padrões de tiro por fase ===
+        const cdByPhase = [0, 2.0, 1.4, 0.9][newPhase];
+        if (!this._lastBossShoot) this._lastBossShoot = 0;
+        if (this.t0 - this._lastBossShoot > cdByPhase) {
+          this._lastBossShoot = this.t0;
+          const facing = player.x < this.x ? -1 : 1;
+          if (newPhase === 1) {
+            // Leque de 3 arquivos criptografados
+            for (let i=-1;i<=1;i++) {
+              const a = Math.PI + i*0.25;
+              bullets.push({x:this.x+this.w/2-7, y:this.y+40, w:14, h:14,
+                vx: Math.cos(a)*230*facing, vy: Math.sin(a)*230,
+                life:3, friendly:false, color:'#f44', enc:true});
+            }
+          } else if (newPhase === 2) {
+            // Espiral de 5 arquivos
+            for (let i=-2;i<=2;i++) {
+              const a = Math.PI + i*0.28 + Math.sin(this.t0)*0.15;
+              bullets.push({x:this.x+this.w/2-7, y:this.y+40, w:14, h:14,
+                vx: Math.cos(a)*260*facing, vy: Math.sin(a)*260,
+                life:3, friendly:false, color:'#f60', enc:true});
+            }
+          } else {
+            // FASE 3: 7 projéteis + raio de criptografia ocasional
+            for (let i=-3;i<=3;i++) {
+              const a = Math.PI + i*0.22;
+              bullets.push({x:this.x+this.w/2-7, y:this.y+40, w:14, h:14,
+                vx: Math.cos(a)*300*facing, vy: Math.sin(a)*300,
+                life:3, friendly:false, color:'#f0f', enc:true});
+            }
+            // Raio vertical aleatório que cai no player
+            if (Math.random()<0.4) {
+              bullets.push({x: player.x + player.w/2 - 6, y: -20, w: 12, h: 22,
+                vx: 0, vy: 380, life: 3, friendly:false, color:'#0ff', enc:true});
+            }
+          }
+          Audio.sfx.boss();
+        }
+      } break;
+    }
+  }
+
+  hit(dmg=1) {
+    this.hp -= dmg;
+    spawnBurst(this.x+this.w/2, this.y+this.h/2, 10, '#fff', 100, 0.3, 2);
+    if (this.hp<=0) {
+      this.alive=false;
+      spawnBurst(this.x+this.w/2, this.y+this.h/2, 24, this.color()||'#f0f', 200, 0.7, 3);
+      addShake(4);
+    }
+  }
+  color() {
+    return { goomba:'#a52', phish:'#0f5', ddos:'#ff0', kraken:'#80f', dragon:'#f50', boss:'#f00' }[this.t];
+  }
+
+  draw(cam) {
+    if (!this.alive) return;
+    const x = (this.x - cam.x)|0, y = (this.y - cam.y)|0;
+    switch(this.t) {
+      case 'goomba': {
+        // ====== CAVALO DE TRÓIA (Trojan Horse) — 28x26 ======
+        // 4 pernas de madeira
+        CTX.fillStyle = '#3a1a04';
+        CTX.fillRect(x+3, y+18, 3, 8);
+        CTX.fillRect(x+9, y+18, 3, 8);
+        CTX.fillRect(x+16, y+18, 3, 8);
+        CTX.fillRect(x+22, y+18, 3, 8);
+        // cascos pretos
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+3, y+24, 3, 2);
+        CTX.fillRect(x+9, y+24, 3, 2);
+        CTX.fillRect(x+16, y+24, 3, 2);
+        CTX.fillRect(x+22, y+24, 3, 2);
+
+        // corpo (madeira)
+        CTX.fillStyle = '#7a3a14';
+        CTX.fillRect(x+1, y+10, 26, 10);
+        // contorno escuro
+        CTX.fillStyle = '#3a1a04';
+        CTX.fillRect(x+1, y+10, 26, 1);
+        CTX.fillRect(x+1, y+19, 26, 1);
+        // tábuas verticais
+        CTX.fillStyle = '#4a2008';
+        CTX.fillRect(x+7, y+11, 1, 8);
+        CTX.fillRect(x+13, y+11, 1, 8);
+        CTX.fillRect(x+19, y+11, 1, 8);
+        // highlight superior
+        CTX.fillStyle = '#9a5828';
+        CTX.fillRect(x+2, y+11, 24, 1);
+        // veios
+        CTX.fillStyle = '#5a2810';
+        CTX.fillRect(x+2, y+14, 4, 1);
+        CTX.fillRect(x+10, y+16, 6, 1);
+        CTX.fillRect(x+20, y+13, 4, 1);
+
+        // porta secreta no corpo (o "trojan"!) — abre/fecha
+        const doorOpen = Math.sin(this.t0*1.5) > 0.7;
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+11, y+13, 6, 6);
+        if (doorOpen) {
+          // soldados saindo (3 pixeizinhos vermelhos)
+          CTX.fillStyle = '#f00';
+          CTX.fillRect(x+12, y+15, 1, 3);
+          CTX.fillRect(x+14, y+15, 1, 3);
+          CTX.fillRect(x+16, y+15, 1, 3);
+        } else {
+          CTX.fillStyle = '#5a0000';
+          CTX.font = 'bold 5px monospace';
+          CTX.fillText('TR', x+11, y+18);
+        }
+
+        // pescoço
+        CTX.fillStyle = '#7a3a14';
+        CTX.fillRect(x+20, y+4, 5, 8);
+        // cabeça
+        CTX.fillRect(x+19, y+1, 8, 7);
+        // detalhe pescoço
+        CTX.fillStyle = '#5a2810';
+        CTX.fillRect(x+20, y+4, 1, 7);
+
+        // orelhas
+        CTX.fillStyle = '#3a1a04';
+        CTX.fillRect(x+19, y-1, 2, 3);
+        CTX.fillRect(x+25, y-1, 2, 3);
+
+        // olho vermelho brilhante
+        CTX.fillStyle = '#f00';
+        CTX.fillRect(x+23, y+3, 3, 3);
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+24, y+4, 1, 1);
+
+        // focinho
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+26, y+5, 1, 2);
+
+        // crina laranja flamejante
+        CTX.fillStyle = '#f50';
+        CTX.fillRect(x+18, y+2, 2, 8);
+        CTX.fillStyle = '#fa0';
+        CTX.fillRect(x+19, y+3, 1, 6);
+        CTX.fillStyle = '#ff0';
+        CTX.fillRect(x+19, y+4, 1, 2);
+
+        // cauda
+        CTX.fillStyle = '#f50';
+        CTX.fillRect(x-1, y+12, 3, 2);
+        CTX.fillRect(x-2, y+14, 3, 2);
+        CTX.fillStyle = '#fa0';
+        CTX.fillRect(x+0, y+13, 1, 2);
+      } break;
+
+      case 'phish': {
+        // ====== PHISHING PHANTOM — Email malicioso com anzol — 30x30 ======
+        const wig = Math.sin(this.t0*4)*2;
+        // anzol metálico no topo
+        CTX.fillStyle = '#888';
+        CTX.fillRect(x+14, y+0, 2, 4);
+        CTX.fillStyle = '#aaa';
+        CTX.fillRect(x+15, y+0, 1, 4);
+        // linha do anzol
+        CTX.strokeStyle = '#666'; CTX.lineWidth=1;
+        CTX.beginPath();
+        CTX.moveTo(x+15, y-6);
+        CTX.lineTo(x+15, y+0);
+        CTX.stroke();
+
+        // envelope corpo (branco com bordas)
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+2, y+6, 26, 18);
+        // borda preta
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+2, y+6, 26, 1);
+        CTX.fillRect(x+2, y+23, 26, 1);
+        CTX.fillRect(x+2, y+6, 1, 18);
+        CTX.fillRect(x+27, y+6, 1, 18);
+
+        // aba do envelope (triângulo via rects)
+        CTX.fillStyle = '#eee';
+        CTX.fillRect(x+3, y+7, 24, 2);
+        CTX.fillStyle = '#ddd';
+        for (let i=0;i<11;i++) {
+          CTX.fillRect(x+3+i, y+8+i, 24-i*2, 1);
+        }
+        // selo vermelho "URGENTE"
+        CTX.fillStyle = '#c00';
+        CTX.fillRect(x+19, y+14, 8, 5);
+        CTX.fillStyle = '#fff';
+        CTX.font = 'bold 4px monospace';
+        CTX.fillText('!!!', x+21, y+18);
+
+        // @ símbolo grande no centro
+        CTX.fillStyle = '#0a0';
+        CTX.font = 'bold 9px monospace';
+        CTX.fillText('@', x+5, y+19);
+
+        // olhinhos malignos sobre o envelope (revelando o fantasma)
+        CTX.fillStyle = '#f00';
+        CTX.fillRect(x+8, y+10, 3, 2);
+        CTX.fillRect(x+15, y+10, 3, 2);
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+9, y+10, 1, 2);
+        CTX.fillRect(x+16, y+10, 1, 2);
+
+        // boca dentes (sorriso maligno)
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+10, y+20, 8, 1);
+
+        // cauda fantasma ondulada (base esfumaçada)
+        CTX.fillStyle = '#9f9';
+        CTX.globalAlpha = 0.7;
+        CTX.fillRect(x+3, y+24, 4, 4+wig);
+        CTX.fillRect(x+10, y+24, 4, 4-wig);
+        CTX.fillRect(x+17, y+24, 4, 4+wig);
+        CTX.fillRect(x+24, y+24, 4, 4-wig);
+        CTX.globalAlpha = 1;
+      } break;
+
+      case 'ddos': {
+        // ====== DDOS BOT (pequeno drone hostil) — 18x18 ======
+        // chassis amarelo
+        CTX.fillStyle = '#fa0';
+        CTX.fillRect(x+4, y+6, 10, 8);
+        // tampa superior
+        CTX.fillStyle = '#fc0';
+        CTX.fillRect(x+5, y+6, 8, 2);
+        // base
+        CTX.fillStyle = '#a60';
+        CTX.fillRect(x+4, y+12, 10, 2);
+
+        // tela / "olho" no centro
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+6, y+8, 6, 4);
+        CTX.fillStyle = '#f00';
+        const blink = Math.floor(this.t0*8)%4;
+        if (blink !== 0) {
+          CTX.fillRect(x+7, y+9, 1, 2);
+          CTX.fillRect(x+10, y+9, 1, 2);
+        }
+
+        // hélices girando (4 cantos)
+        const sp = Math.sin(this.t0*30)*2;
+        CTX.fillStyle = '#aaa';
+        CTX.fillRect(x+1, y+5, 3, 1);
+        CTX.fillRect(x+14, y+5, 3, 1);
+        CTX.fillRect(x+1, y+13, 3, 1);
+        CTX.fillRect(x+14, y+13, 3, 1);
+        CTX.globalAlpha = 0.5;
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+0+sp, y+4, 4, 1);
+        CTX.fillRect(x+14-sp, y+4, 4, 1);
+        CTX.fillRect(x+0+sp, y+14, 4, 1);
+        CTX.fillRect(x+14-sp, y+14, 4, 1);
+        CTX.globalAlpha = 1;
+
+        // pequena antena
+        CTX.fillStyle = '#aaa';
+        CTX.fillRect(x+8, y+2, 1, 4);
+        CTX.fillStyle = '#f00';
+        CTX.fillRect(x+8, y+1, 2, 1);
+
+        // texto "DOS" minúsculo na base
+        CTX.fillStyle = '#000';
+        CTX.font = 'bold 4px monospace';
+        CTX.fillText('DDoS', x+3, y+17);
+      } break;
+
+      case 'kraken': {
+        // ====== KEYLOGGER KRAKEN — polvo com teclas 36x34 ======
+        // tentáculos atrás (camada de fundo)
+        const wig = Math.sin(this.t0*3);
+        CTX.fillStyle = '#3a0a5a';
+        CTX.fillRect(x+2, y+18, 3, 14);
+        CTX.fillRect(x+30, y+18, 3, 14);
+        // tentáculos com curva
+        CTX.fillRect(x+1, y+24 + (wig*2|0), 4, 3);
+        CTX.fillRect(x+31, y+24 - (wig*2|0), 4, 3);
+
+        // cabeça (bulbo)
+        CTX.fillStyle = '#80f';
+        CTX.fillRect(x+6, y+2, 24, 16);
+        CTX.fillRect(x+4, y+5, 28, 12);
+        CTX.fillRect(x+8, y+0, 20, 4);
+        // highlight
+        CTX.fillStyle = '#a4ff';
+        CTX.fillRect(x+8, y+2, 18, 2);
+        CTX.fillRect(x+6, y+5, 4, 2);
+        // sombra inferior
+        CTX.fillStyle = '#5a0080';
+        CTX.fillRect(x+4, y+15, 28, 3);
+
+        // olhos grandes (sclera branca)
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+9, y+6, 7, 7);
+        CTX.fillRect(x+20, y+6, 7, 7);
+        // íris vermelha
+        CTX.fillStyle = '#f00';
+        CTX.fillRect(x+10, y+8, 4, 4);
+        CTX.fillRect(x+21, y+8, 4, 4);
+        // pupila preta
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+11, y+9, 2, 2);
+        CTX.fillRect(x+22, y+9, 2, 2);
+
+        // boca com dentes
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+13, y+15, 10, 2);
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+14, y+15, 1, 1);
+        CTX.fillRect(x+17, y+15, 1, 1);
+        CTX.fillRect(x+20, y+15, 1, 1);
+
+        // 6 tentáculos com teclas
+        const keys = ['Q','W','E','R','T','Y'];
+        const ttX = [4, 10, 16, 21, 26, 30];
+        for (let i=0;i<6;i++) {
+          const tx = x + ttX[i];
+          const sway = Math.sin(this.t0*4 + i)*2;
+          // tentáculo
+          CTX.fillStyle = '#80f';
+          CTX.fillRect(tx, y+17, 3, 8);
+          CTX.fillStyle = '#5a0080';
+          CTX.fillRect(tx, y+17, 1, 8);
+          // tecla (cubo branco) na ponta
+          CTX.fillStyle = '#eee';
+          CTX.fillRect(tx-1+sway, y+25, 5, 5);
+          CTX.fillStyle = '#999';
+          CTX.fillRect(tx-1+sway, y+29, 5, 1);
+          CTX.fillStyle = '#222';
+          CTX.fillRect(tx-1+sway, y+25, 5, 1);
+          // letra na tecla
+          CTX.fillStyle = '#000';
+          CTX.font = 'bold 5px monospace';
+          CTX.fillText(keys[i], tx+sway, y+29);
+        }
+      } break;
+
+      case 'dragon': {
+        // ====== ZERO-DAY DRAGON — 60x46 ======
+        const wb = Math.sin(this.t0*8)*5;
+
+        // asas grandes atrás
+        CTX.fillStyle = '#700';
+        CTX.fillRect(x+2, y+0 - wb, 16, 22);
+        CTX.fillRect(x+0, y+6 - wb, 20, 14);
+        CTX.fillStyle = '#a30';
+        CTX.fillRect(x+4, y+2 - wb, 12, 18);
+        // estrutura óssea das asas (linhas)
+        CTX.fillStyle = '#500';
+        CTX.fillRect(x+8, y+2 - wb, 1, 18);
+        CTX.fillRect(x+12, y+4 - wb, 1, 14);
+        CTX.fillRect(x+16, y+6 - wb, 1, 10);
+
+        // pescoço longo
+        CTX.fillStyle = '#f50';
+        CTX.fillRect(x+38, y+10, 8, 14);
+
+        // corpo do dragão
+        CTX.fillStyle = '#f50';
+        CTX.fillRect(x+14, y+18, 32, 18);
+        CTX.fillRect(x+10, y+22, 38, 12);
+        // sombra inferior
+        CTX.fillStyle = '#c30';
+        CTX.fillRect(x+10, y+32, 38, 4);
+        // escamas (pontos)
+        CTX.fillStyle = '#fa0';
+        for (let i=0;i<6;i++) {
+          CTX.fillRect(x+14+i*5, y+22, 1, 1);
+          CTX.fillRect(x+16+i*5, y+27, 1, 1);
+        }
+
+        // espinhos dorsais
+        CTX.fillStyle = '#a30';
+        for (let i=0;i<5;i++) {
+          CTX.fillRect(x+18+i*5, y+15, 2, 4);
+        }
+
+        // cabeça
+        CTX.fillStyle = '#f50';
+        CTX.fillRect(x+42, y+4, 16, 14);
+        CTX.fillRect(x+40, y+8, 18, 10);
+        // mandíbula
+        CTX.fillRect(x+44, y+14, 14, 6);
+        // dentes
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+46, y+18, 1, 2);
+        CTX.fillRect(x+49, y+18, 1, 2);
+        CTX.fillRect(x+52, y+18, 1, 2);
+        CTX.fillRect(x+55, y+18, 1, 2);
+
+        // chifres
+        CTX.fillStyle = '#ccc';
+        CTX.fillRect(x+44, y+1, 2, 5);
+        CTX.fillRect(x+48, y+0, 2, 6);
+        CTX.fillRect(x+53, y+1, 2, 5);
+        CTX.fillStyle = '#eee';
+        CTX.fillRect(x+44, y+1, 1, 5);
+        CTX.fillRect(x+48, y+0, 1, 6);
+        CTX.fillRect(x+53, y+1, 1, 5);
+
+        // olho amarelo brilhante
+        CTX.fillStyle = '#ff0';
+        CTX.fillRect(x+49, y+8, 4, 4);
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+51, y+9, 2, 3);
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+50, y+8, 1, 1);
+
+        // narina
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+56, y+11, 1, 1);
+        // fumacinha de respiração
+        if (Math.floor(this.t0*2)%2) {
+          CTX.fillStyle = '#fff7';
+          CTX.fillRect(x+58, y+10, 2, 2);
+          CTX.fillRect(x+59, y+8, 1, 1);
+        }
+
+        // peito "0-DAY" estampado
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+18, y+24, 22, 8);
+        CTX.fillStyle = '#ff0';
+        CTX.font = 'bold 8px monospace';
+        CTX.fillText('0-DAY', x+19, y+31);
+
+        // cauda
+        CTX.fillStyle = '#f50';
+        CTX.fillRect(x+6, y+28, 8, 4);
+        CTX.fillRect(x+2, y+30, 6, 4);
+        CTX.fillStyle = '#a30';
+        CTX.fillRect(x+0, y+30, 2, 4);
+
+        // pés/garras
+        CTX.fillStyle = '#a30';
+        CTX.fillRect(x+18, y+36, 5, 6);
+        CTX.fillRect(x+30, y+36, 5, 6);
+        CTX.fillStyle = '#fff';
+        CTX.fillRect(x+18, y+42, 1, 2);
+        CTX.fillRect(x+20, y+42, 1, 2);
+        CTX.fillRect(x+22, y+42, 1, 2);
+        CTX.fillRect(x+30, y+42, 1, 2);
+        CTX.fillRect(x+32, y+42, 1, 2);
+        CTX.fillRect(x+34, y+42, 1, 2);
+      } break;
+
+      case 'boss': {
+        // ====== LORD RANSOMWARE — 110x130 ======
+        // sombra geral (manto)
+        CTX.fillStyle = '#08000a';
+        CTX.fillRect(x+5, y+20, 100, 110);
+        CTX.fillRect(x-2, y+40, 114, 90);
+
+        // manto principal
+        CTX.fillStyle = '#1a0010';
+        CTX.fillRect(x+10, y+25, 90, 100);
+        CTX.fillRect(x+0, y+45, 110, 80);
+        // bordas tortas do manto (esfarrapado)
+        CTX.fillStyle = '#08000a';
+        CTX.fillRect(x+0, y+120, 12, 6);
+        CTX.fillRect(x+18, y+125, 10, 5);
+        CTX.fillRect(x+40, y+120, 12, 6);
+        CTX.fillRect(x+60, y+125, 14, 5);
+        CTX.fillRect(x+80, y+120, 10, 6);
+        CTX.fillRect(x+96, y+125, 14, 5);
+
+        // capuz exterior
+        CTX.fillStyle = '#000005';
+        CTX.fillRect(x+18, y+0, 74, 8);
+        CTX.fillRect(x+12, y+4, 86, 16);
+        CTX.fillRect(x+8, y+12, 94, 36);
+        // sombra interna (rosto)
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+22, y+14, 66, 34);
+
+        // CAVEIRA dentro do capuz
+        CTX.fillStyle = '#dadada';
+        CTX.fillRect(x+30, y+18, 50, 26);
+        CTX.fillRect(x+34, y+14, 42, 8);
+        CTX.fillStyle = '#999';
+        CTX.fillRect(x+30, y+18, 50, 2);
+        // rachadura
+        CTX.fillStyle = '#666';
+        CTX.fillRect(x+50, y+20, 1, 8);
+        CTX.fillRect(x+51, y+24, 1, 4);
+
+        // órbitas oculares (pretas)
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+34, y+24, 14, 10);
+        CTX.fillRect(x+62, y+24, 14, 10);
+        // olhos vermelhos brilhantes
+        CTX.fillStyle = '#f00';
+        const bossBlink = Math.floor(this.t0*4)%5;
+        if (bossBlink !== 0) {
+          CTX.fillRect(x+38, y+27, 6, 5);
+          CTX.fillRect(x+66, y+27, 6, 5);
+          // brilho central
+          CTX.fillStyle = '#fff';
+          CTX.fillRect(x+40, y+28, 2, 2);
+          CTX.fillRect(x+68, y+28, 2, 2);
+        }
+
+        // nariz triangular
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+53, y+30, 4, 4);
+        CTX.fillRect(x+54, y+34, 2, 2);
+
+        // mandíbula com dentes
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+38, y+38, 34, 6);
+        CTX.fillStyle = '#dadada';
+        for (let i=0;i<8;i++) {
+          CTX.fillRect(x+39+i*4, y+38, 2, 4);
+        }
+
+        // peito — placa metálica com Bitcoin
+        CTX.fillStyle = '#222';
+        CTX.fillRect(x+30, y+55, 50, 30);
+        CTX.fillStyle = '#444';
+        CTX.fillRect(x+30, y+55, 50, 2);
+        // símbolo bitcoin / cifrão
+        CTX.fillStyle = '#fc0';
+        CTX.font = 'bold 28px monospace';
+        CTX.fillText('$', x+45, y+82);
+        // arquivos criptografados (.zip)
+        CTX.fillStyle = '#f00';
+        CTX.font = 'bold 6px monospace';
+        CTX.fillText('.zip', x+32, y+62);
+        CTX.fillText('.pdf', x+66, y+62);
+        CTX.fillText('.doc', x+32, y+82);
+        CTX.fillText('.key', x+66, y+82);
+
+        // braços laterais
+        CTX.fillStyle = '#1a0010';
+        CTX.fillRect(x-3, y+55, 16, 55);
+        CTX.fillRect(x+97, y+55, 16, 55);
+
+        // mãos esqueléticas
+        CTX.fillStyle = '#dadada';
+        CTX.fillRect(x-3, y+100, 14, 12);
+        CTX.fillRect(x+99, y+100, 14, 12);
+        // dedos
+        CTX.fillStyle = '#666';
+        for (let i=0;i<3;i++) {
+          CTX.fillRect(x-3+i*5, y+110, 2, 5);
+          CTX.fillRect(x+99+i*5, y+110, 2, 5);
+        }
+
+        // corrente do cadeado (de cima)
+        CTX.fillStyle = '#888';
+        for (let i=0;i<5;i++) {
+          CTX.fillRect(x+52+(i%2?2:-2), y+85+i*5, 4, 3);
+          CTX.fillStyle = i%2 ? '#666' : '#aaa';
+        }
+        // CADEADO gigante na frente
+        CTX.fillStyle = '#888';
+        CTX.fillRect(x+44, y+95, 22, 16); // arco
+        CTX.fillStyle = '#222';
+        CTX.fillRect(x+47, y+98, 16, 10); // interior arco
+        CTX.fillStyle = '#fc0';
+        CTX.fillRect(x+40, y+108, 30, 22); // corpo dourado
+        CTX.fillStyle = '#fa0';
+        CTX.fillRect(x+40, y+108, 30, 2);
+        CTX.fillStyle = '#c80';
+        CTX.fillRect(x+40, y+128, 30, 2);
+        // furadinho da chave
+        CTX.fillStyle = '#000';
+        CTX.fillRect(x+53, y+115, 4, 6);
+        CTX.fillRect(x+54, y+118, 2, 6);
+        // texto LOCKED
+        CTX.fillStyle = '#f00';
+        CTX.font = 'bold 7px monospace';
+        CTX.fillText('LOCKED', x+44, y+125);
+
+        // bandeira no topo do capuz com símbolo de ransomware
+        CTX.fillStyle = '#f00';
+        CTX.fillRect(x+50, y-8, 12, 8);
+        CTX.fillStyle = '#fff';
+        CTX.font = 'bold 6px monospace';
+        CTX.fillText('R$', x+51, y-2);
+      } break;
+    }
+  }
+}
+
+/* ----- POWERUPS ----------------------------------------------------------- */
+class Powerup {
+  constructor(t,x,y) { this.t=t; this.x=x; this.y=y; this.w=20; this.h=20; this.alive=true; this.t0=0; }
+  get hitbox() { return {x:this.x, y:this.y+Math.sin(this.t0*4)*3, w:this.w, h:this.h}; }
+  update(dt) { this.t0+=dt; }
+  draw(cam) {
+    if (!this.alive) return;
+    const x = (this.x - cam.x)|0, y = (this.y - cam.y + Math.sin(this.t0*4)*3)|0;
+    const glow = 0.5 + 0.5*Math.sin(this.t0*6);
+    CTX.globalAlpha = 0.4 + 0.3*glow;
+    switch(this.t) {
+      case 'patch':
+        CTX.fillStyle = '#0f0'; CTX.fillRect(x-3,y-3,26,26); break;
+      case 'token':
+        CTX.fillStyle = '#fc0'; CTX.fillRect(x-3,y-3,26,26); break;
+      case 'shield':
+        CTX.fillStyle = '#4af'; CTX.fillRect(x-3,y-3,26,26); break;
+      case 'cloak':
+        CTX.fillStyle = '#a0f'; CTX.fillRect(x-3,y-3,26,26); break;
+      case 'heart':
+        CTX.fillStyle = '#f33'; CTX.fillRect(x-3,y-3,26,26); break;
+    }
+    CTX.globalAlpha = 1;
+    // sprite real
+    switch(this.t) {
+      case 'patch': {
+        // escudo "P" verde
+        CTX.fillStyle = '#0a0'; CTX.fillRect(x+2,y+2,16,16);
+        CTX.fillStyle = '#0f8'; CTX.fillRect(x+4,y+4,12,12);
+        CTX.fillStyle = '#000'; CTX.font='bold 12px monospace'; CTX.fillText('P', x+7, y+15);
+      } break;
+      case 'token': {
+        // chave dourada
+        CTX.fillStyle = '#fc0';
+        CTX.fillRect(x+6,y+2,8,8);
+        CTX.fillRect(x+8,y+10,4,8);
+        CTX.fillRect(x+4,y+14,4,4);
+        CTX.fillRect(x+4,y+18,3,2);
+        CTX.fillStyle = '#f80'; CTX.fillRect(x+8,y+4,4,4);
+      } break;
+      case 'shield': {
+        // escudo azul
+        CTX.fillStyle = '#48f';
+        CTX.fillRect(x+4,y+2,12,4);
+        CTX.fillRect(x+2,y+4,16,10);
+        CTX.fillRect(x+6,y+14,8,4);
+        CTX.fillRect(x+8,y+18,4,2);
+        CTX.fillStyle = '#cef'; CTX.fillRect(x+6,y+4,8,6);
+      } break;
+      case 'cloak': {
+        // capa roxa
+        CTX.fillStyle = '#a0f';
+        CTX.fillRect(x+2,y+2,16,4);
+        CTX.fillRect(x+0,y+6,20,12);
+        CTX.fillStyle = '#60a';
+        CTX.fillRect(x+6,y+10,8,8);
+      } break;
+      case 'heart': {
+        // HD vermelho
+        CTX.fillStyle = '#a00'; CTX.fillRect(x+2,y+4,16,12);
+        CTX.fillStyle = '#f33'; CTX.fillRect(x+4,y+6,12,8);
+        CTX.fillStyle = '#fff'; CTX.fillRect(x+6,y+8,2,2);
+        CTX.fillStyle = '#000'; CTX.fillRect(x+12,y+11,3,2);
+      } break;
+    }
+  }
+}
+
+/* ----- CAMERA / BACKGROUND ------------------------------------------------ */
+const cam = {x:0, y:0};
+function updateCamera(player, level) {
+  const target = player.x + player.w/2 - W/2;
+  cam.x += (target - cam.x) * 0.12;
+  cam.x = clamp(cam.x, 0, level.width - W);
+  cam.y = 0;
+}
+
+function drawBackground(theme, t) {
+  // base
+  let top, mid, bot;
+  if (theme==='matrix') { top='#001008'; mid='#012010'; bot='#000a04'; }
+  else if (theme==='server') { top='#060818'; mid='#0a0e28'; bot='#040614'; }
+  else { top='#1a0010'; mid='#280014'; bot='#08000a'; }
+  const grd = CTX.createLinearGradient(0,0,0,H);
+  grd.addColorStop(0, top); grd.addColorStop(0.5, mid); grd.addColorStop(1, bot);
+  CTX.fillStyle = grd; CTX.fillRect(0,0,W,H);
+
+  // Camada 1 — estrelas/símbolos distantes
+  CTX.save();
+  const off1 = (cam.x*0.1)%160;
+  for (let i=-1;i<8;i++) {
+    for (let j=0;j<5;j++) {
+      const sx = i*160 - off1;
+      const sy = 30 + j*80 + Math.sin(i*0.5+j+t)*3;
+      CTX.globalAlpha = 0.4;
+      if (theme==='matrix') {
+        CTX.fillStyle = '#0f5'; CTX.font='10px monospace';
+        const chars = ['0','1','#','*','%','&','/'];
+        CTX.fillText(chars[(i*7+j)%chars.length], sx, sy);
+      } else if (theme==='server') {
+        CTX.fillStyle = '#06f'; CTX.fillRect(sx, sy, 3, 3);
+      } else {
+        CTX.fillStyle = '#f0f'; CTX.fillRect(sx, sy, 2, 2);
+      }
+    }
+  }
+  CTX.restore();
+
+  // Camada 2 — silhuetas (servidores, circuitos, prédios glitch)
+  const off2 = (cam.x*0.3)%240;
+  for (let i=-1;i<7;i++) {
+    const sx = i*240 - off2;
+    const baseY = H - 200;
+    if (theme==='matrix') {
+      // placas de circuito
+      CTX.fillStyle = '#0a3a18';
+      CTX.fillRect(sx+20, baseY+40, 200, 120);
+      CTX.fillStyle = '#0f5';
+      for (let k=0;k<6;k++) CTX.fillRect(sx+30+k*30, baseY+50+k*15, 4, 4);
+      CTX.strokeStyle = '#0f5'; CTX.lineWidth=1;
+      CTX.beginPath();
+      CTX.moveTo(sx+30, baseY+60); CTX.lineTo(sx+200, baseY+60);
+      CTX.moveTo(sx+50, baseY+90); CTX.lineTo(sx+200, baseY+90);
+      CTX.moveTo(sx+100, baseY+120); CTX.lineTo(sx+200, baseY+120);
+      CTX.stroke();
+    } else if (theme==='server') {
+      // racks
+      CTX.fillStyle = '#0a0e30';
+      CTX.fillRect(sx+20, baseY-40, 60, 200);
+      CTX.fillRect(sx+100, baseY-40, 60, 200);
+      CTX.fillRect(sx+180, baseY-40, 60, 200);
+      CTX.fillStyle = '#06f';
+      for (let r=0;r<3;r++) for (let s=0;s<8;s++) {
+        CTX.globalAlpha = (s+r+Math.floor(t*2))%3===0 ? 1 : 0.4;
+        CTX.fillRect(sx+25 + r*80, baseY-30 + s*22, 6, 6);
+        CTX.fillRect(sx+35 + r*80, baseY-30 + s*22, 6, 6);
+      }
+      CTX.globalAlpha = 1;
+    } else {
+      // prédios glitch
+      const heights = [180,140,220,160,200];
+      for (let k=0;k<5;k++) {
+        CTX.fillStyle = (k%2)?'#1a0020':'#2a0010';
+        CTX.fillRect(sx+k*48, H-heights[k]-60, 40, heights[k]);
+        CTX.fillStyle = '#f0f';
+        for (let w=0;w<4;w++) for (let h=0;h<6;h++) {
+          if ((w+h+Math.floor(t*4+k))%5===0) {
+            CTX.globalAlpha = 0.6;
+            CTX.fillRect(sx+k*48+5+w*8, H-heights[k]-50+h*20, 4, 4);
+          }
+        }
+        CTX.globalAlpha = 1;
+      }
+    }
+  }
+
+  // Camada 3 (perto) — chão decorativo
+  const off3 = (cam.x*0.7)%80;
+  for (let i=-1;i<14;i++) {
+    const sx = i*80 - off3;
+    if (theme==='matrix') {
+      CTX.fillStyle = '#063018';
+      CTX.fillRect(sx, H-90, 80, 30);
+      CTX.fillStyle = '#0f5'; CTX.globalAlpha=0.3;
+      CTX.fillRect(sx+10, H-80, 60, 4);
+      CTX.globalAlpha = 1;
+    } else if (theme==='server') {
+      CTX.fillStyle = '#080c20';
+      CTX.fillRect(sx, H-90, 80, 30);
+      CTX.fillStyle = '#06f'; CTX.globalAlpha=0.4;
+      CTX.fillRect(sx+5, H-80, 70, 2);
+      CTX.fillRect(sx+5, H-72, 70, 2);
+      CTX.globalAlpha = 1;
+    } else {
+      CTX.fillStyle = '#1a0010';
+      CTX.fillRect(sx, H-90, 80, 30);
+      CTX.fillStyle = '#f0f'; CTX.globalAlpha=0.3;
+      CTX.fillRect(sx + (Math.sin(t*4+i)*10|0)+10, H-80, 60, 2);
+      CTX.globalAlpha = 1;
+    }
+  }
+}
+
+function drawGround(level, theme) {
+  // chão preenchido com cor do tema, com buracos
+  CTX.save();
+  let groundColor, lineColor;
+  if (theme==='matrix') { groundColor = '#0a4a20'; lineColor='#0f5'; }
+  else if (theme==='server') { groundColor='#101840'; lineColor='#06f'; }
+  else { groundColor='#3a0020'; lineColor='#f0f'; }
+  const startX = Math.floor(cam.x);
+  const endX = Math.ceil(cam.x + W);
+  // desenha em segmentos
+  let x = startX;
+  while (x < endX) {
+    // próximo buraco
+    let next = endX;
+    let inGap = false;
+    for (const g of level.gaps) {
+      if (x >= g.x && x < g.x+g.w) { inGap = true; next = g.x+g.w; break; }
+      else if (g.x > x && g.x < next) { next = g.x; }
+    }
+    if (!inGap) {
+      const w = Math.min(next, endX) - x;
+      CTX.fillStyle = groundColor;
+      CTX.fillRect(x - cam.x, level.ground, w, H - level.ground);
+      CTX.strokeStyle = lineColor; CTX.lineWidth = 2;
+      CTX.beginPath(); CTX.moveTo(x - cam.x, level.ground); CTX.lineTo(x-cam.x + w, level.ground); CTX.stroke();
+      // listras
+      CTX.fillStyle = lineColor; CTX.globalAlpha=0.15;
+      for (let xx = x; xx < x+w; xx += 16) {
+        CTX.fillRect(xx-cam.x, level.ground+8, 8, 2);
+      }
+      CTX.globalAlpha = 1;
+    }
+    x = next;
+  }
+  CTX.restore();
+}
+
+function drawPlatforms(level, theme) {
+  for (const p of level.platforms) {
+    if (p.x + p.w < cam.x || p.x > cam.x + W) continue;
+    const x = p.x - cam.x, y = p.y;
+    let face, edge;
+    if (theme==='matrix') { face='#063018'; edge='#0f5'; }
+    else if (theme==='server') { face='#0a1240'; edge='#06f'; }
+    else { face='#2a0020'; edge='#f0f'; }
+    CTX.fillStyle = face;
+    CTX.fillRect(x, y, p.w, p.h);
+    CTX.fillStyle = edge;
+    CTX.fillRect(x, y, p.w, 2);
+    CTX.fillStyle = '#fff2';
+    CTX.fillRect(x+2, y+4, p.w-4, 2);
+  }
+}
+
+function drawGoal(level, t) {
+  const x = level.goalX - cam.x;
+  if (x < -50 || x > W+50) return;
+  // portal vertical com aro animado
+  for (let i=0;i<3;i++) {
+    CTX.globalAlpha = 0.4 - i*0.1;
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x - 14 - i*4, level.ground - 100, 28 + i*8, 100);
+    CTX.globalAlpha = 1;
+  }
+  CTX.fillStyle = '#003a3a';
+  CTX.fillRect(x - 12, level.ground - 100, 24, 100);
+  // animação interna
+  for (let i=0;i<5;i++) {
+    const yy = level.ground - 100 + ((t*100 + i*30) % 100);
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(x-10, yy, 20, 2);
+  }
+  CTX.fillStyle = '#fff';
+  CTX.font = 'bold 10px monospace';
+  CTX.fillText('EXIT', x-12, level.ground - 105);
+}
+
+/* ----- HUD ---------------------------------------------------------------- */
+function drawHUD(player, score, level, xp, xpMax) {
+  // barra topo translúcida
+  CTX.fillStyle = '#000a';
+  CTX.fillRect(0,0, W, 38);
+  CTX.fillStyle = '#0ff'; CTX.fillRect(0, 38, W, 2);
+
+  // vidas (HDs vermelhos)
+  for (let i=0;i<player.lives;i++) {
+    const x = 10 + i*22, y = 8;
+    CTX.fillStyle = '#a00'; CTX.fillRect(x, y+2, 18, 14);
+    CTX.fillStyle = '#f33'; CTX.fillRect(x+2, y+4, 14, 10);
+    CTX.fillStyle = '#fff'; CTX.fillRect(x+4, y+6, 2, 2);
+    CTX.fillStyle = '#000'; CTX.fillRect(x+10, y+9, 4, 2);
+  }
+  // patches
+  CTX.fillStyle = '#0f8'; CTX.font='bold 14px monospace';
+  CTX.fillText('PATCHES: ' + String(score.patches).padStart(3,'0'), 110, 24);
+
+  // fase
+  CTX.fillStyle = '#0ff';
+  CTX.fillText('FASE ' + level.num + ' — ' + level.name.toUpperCase(), W/2 - 130, 24);
+
+  // XP
+  CTX.fillStyle = '#fff'; CTX.fillText('XP', W - 200, 24);
+  CTX.strokeStyle = '#0ff'; CTX.strokeRect(W-170, 12, 130, 16);
+  CTX.fillStyle = '#0ff'; CTX.fillRect(W-168, 14, Math.min(126, 126*xp/xpMax), 12);
+
+  // powerups ativos
+  let px = 10, py = 44;
+  if (player.shieldT>0) { CTX.fillStyle = '#4af'; CTX.fillRect(px,py,18,18); CTX.fillStyle='#000'; CTX.font='bold 12px monospace'; CTX.fillText('S', px+5, py+14); px+=22; }
+  if (player.tokenT>0)  { CTX.fillStyle = '#fc0'; CTX.fillRect(px,py,18,18); CTX.fillStyle='#000'; CTX.fillText('K', px+5, py+14); px+=22; }
+  if (player.cloakT>0)  { CTX.fillStyle = '#a0f'; CTX.fillRect(px,py,18,18); CTX.fillStyle='#fff'; CTX.fillText('C', px+5, py+14); px+=22; }
+}
+
+/* ----- QUIZ --------------------------------------------------------------- */
+class Quiz {
+  constructor(question, onResult) {
+    this.q = question;
+    this.timeLeft = 10;
+    this.onResult = onResult;
+    this.selected = 0;
+    this.locked = false;
+    this.result = null;
+    this.resultTimer = 0;
+    this.appear = 0;
+  }
+  update(dt) {
+    this.appear = Math.min(1, this.appear + dt*4);
+    if (this.locked) {
+      this.resultTimer -= dt;
+      if (this.resultTimer <= 0) this.onResult(this.result);
+      return;
+    }
+    this.timeLeft -= dt;
+    if (this.timeLeft <= 0) { this.lock(false, true); return; }
+    if (pollPressed('arrowup')||pollPressed('w')) { this.selected = (this.selected+3)%4; Audio.sfx.select(); }
+    if (pollPressed('arrowdown')||pollPressed('s')) { this.selected = (this.selected+1)%4; Audio.sfx.select(); }
+    if (pollPressed('1')) { this.selected = 0; this.confirm(); }
+    if (pollPressed('2')) { this.selected = 1; this.confirm(); }
+    if (pollPressed('3')) { this.selected = 2; this.confirm(); }
+    if (pollPressed('4')) { this.selected = 3; this.confirm(); }
+    if (pollPressed('enter')||pollPressed(' ')||pollPressed('x')) this.confirm();
+  }
+  confirm() { this.lock(this.selected === this.q.c, false); }
+  lock(correct, timeout) {
+    this.locked = true;
+    this.result = { correct, timeout, q: this.q };
+    this.resultTimer = correct ? 1.5 : 3.2;
+    if (correct) Audio.sfx.correct(); else Audio.sfx.wrong();
+  }
+  draw() {
+    // fundo escuro com glitch leve
+    CTX.fillStyle = '#000d';
+    CTX.fillRect(0,0,W,H);
+    // janela quiz
+    const bw = 700, bh = 360;
+    const bx = (W-bw)/2, by = (H-bh)/2 - 10;
+    const ease = 1 - Math.pow(1-this.appear, 3);
+    CTX.save();
+    CTX.translate(W/2, H/2);
+    CTX.scale(ease, ease);
+    CTX.translate(-W/2, -H/2);
+
+    // moldura
+    CTX.fillStyle = '#0a0a18'; CTX.fillRect(bx, by, bw, bh);
+    CTX.strokeStyle = '#0ff'; CTX.lineWidth = 3; CTX.strokeRect(bx, by, bw, bh);
+    CTX.strokeStyle = '#0ff8'; CTX.strokeRect(bx-4, by-4, bw+8, bh+8);
+    // header
+    CTX.fillStyle = '#0ff'; CTX.fillRect(bx, by, bw, 32);
+    CTX.fillStyle = '#000'; CTX.font='bold 16px monospace';
+    CTX.fillText('!! ALERTA DE INTRUSÃO — QUIZ DE SEGURANÇA !!', bx+16, by+22);
+    // timer
+    const tp = clamp(this.timeLeft/10, 0, 1);
+    CTX.fillStyle = '#222';
+    CTX.fillRect(bx+16, by+44, bw-32, 10);
+    CTX.fillStyle = tp>0.4 ? '#0f5' : tp>0.2 ? '#fc0' : '#f33';
+    CTX.fillRect(bx+16, by+44, (bw-32)*tp, 10);
+    CTX.fillStyle = '#fff'; CTX.font = 'bold 12px monospace';
+    CTX.fillText('TEMPO: ' + Math.max(0,this.timeLeft).toFixed(1) + 's', bx+bw-110, by+82);
+    // pergunta (quebra de linha)
+    CTX.fillStyle = '#0ff'; CTX.font = 'bold 16px monospace';
+    wrapText(this.q.q, bx+16, by+80, bw-32, 20);
+    // alternativas
+    CTX.font = '14px monospace';
+    for (let i=0;i<4;i++) {
+      const ay = by + 150 + i*40;
+      let color = '#142', bgs = '#0f5';
+      if (this.locked) {
+        if (i === this.q.c) { color = '#0c4020'; bgs = '#0f5'; }
+        else if (i === this.selected && !this.result.correct) { color = '#400'; bgs = '#f44'; }
+        else { color = '#111'; bgs = '#444'; }
+      } else if (i === this.selected) { color = '#024050'; bgs = '#0ff'; }
+      else { color = '#111'; bgs = '#0ff8'; }
+      CTX.fillStyle = color; CTX.fillRect(bx+16, ay, bw-32, 32);
+      CTX.strokeStyle = bgs; CTX.lineWidth = 2; CTX.strokeRect(bx+16, ay, bw-32, 32);
+      CTX.fillStyle = bgs; CTX.font = 'bold 14px monospace';
+      CTX.fillText((i+1)+')', bx+24, ay+20);
+      CTX.fillStyle = '#fff'; CTX.font = '14px monospace';
+      wrapText(this.q.a[i], bx+50, ay+20, bw-80, 16, 1);
+    }
+    // resultado
+    if (this.locked) {
+      const ry = by+bh-22;
+      CTX.fillStyle = this.result.correct ? '#0f5' : '#f55';
+      CTX.font='bold 14px monospace';
+      const msg = this.result.correct ? '✓ CORRETO! INIMIGO NEUTRALIZADO.' : (this.result.timeout ? '✗ TEMPO ESGOTADO — VOCÊ FOI ATINGIDO!' : '✗ INCORRETO!');
+      CTX.fillText(msg, bx+16, ry);
+      if (!this.result.correct) {
+        CTX.fillStyle = '#bbb'; CTX.font='11px monospace';
+        wrapText('RESP. CERTA: ' + this.q.a[this.q.c] + ' — ' + this.q.e, bx+16, by+bh-2, bw-32, 14, 1);
+      }
+    } else {
+      CTX.fillStyle = '#888'; CTX.font='11px monospace';
+      CTX.fillText('↑↓ navegar &nbsp;|&nbsp; ENTER confirmar &nbsp;|&nbsp; 1-4 atalho rápido', bx+16, by+bh-12);
+    }
+    CTX.restore();
+  }
+}
+function wrapText(text, x, y, maxW, lh, maxLines=10) {
+  const words = text.split(' ');
+  let line = '', ly = y, count=0;
+  for (let i=0;i<words.length;i++) {
+    const test = line + (line?' ':'') + words[i];
+    if (CTX.measureText(test).width > maxW && line) {
+      CTX.fillText(line, x, ly);
+      line = words[i]; ly += lh; count++;
+      if (count >= maxLines) return;
+    } else line = test;
+  }
+  if (line) CTX.fillText(line, x, ly);
+}
+
+/* ----- GAME STATE MACHINE ------------------------------------------------- */
+const STATE = {
+  MENU:'menu', HOW:'how', CREDITS:'credits', INTRO:'intro',
+  PLAY:'play', QUIZ:'quiz', TRANS:'trans', GAMEOVER:'over', WIN:'win'
+};
+
+const game = {
+  state: STATE.MENU,
+  menuSel: 0,
+  level: null,
+  levelNum: 1,
+  player: null,
+  enemies: [],
+  powerups: [],
+  bullets: [],
+  quiz: null,
+  pendingEnemy: null,
+  time: 0,
+  totalTime: 0,
+  startTime: 0,
+  stats: { patches:0, correct:0, wrong:0, defeated:0, xp:0, xpMax:30 },
+  highscore: parseInt(localStorage.getItem('cyberjump_hs')||'0',10),
+  transTimer: 0,
+  introTimer: 0,
+  questionPool: null,
+  questionIdx: 0,
+  bossSpawned: false,
+  introMsgs: [],
+  introI: 0,
+};
+
+function shuffle(a) { for (let i=a.length-1;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+function startGame() {
+  game.state = STATE.INTRO;
+  game.levelNum = 1;
+  game.stats = { patches:0, correct:0, wrong:0, defeated:0, xp:0, xpMax:30 };
+  game.startTime = performance.now();
+  game.introTimer = 0;
+  game.introI = 0;
+  game.introMsgs = [
+    '> ESTABELECENDO CONEXÃO SEGURA...',
+    '> ROTEANDO POR VPN... ',
+    '> CONEXÃO ESTABELECIDA.',
+    '',
+    'Pentester Pixel, sua missão começa agora.',
+    'A internet foi sequestrada por LORD RANSOMWARE.',
+    'Atravesse 3 zonas hostis, derrote os agentes',
+    'maliciosos e libere os dados do mundo.',
+    '',
+    '[ ENTER para iniciar ]'
+  ];
+  loadLevel(1);
+}
+function loadLevel(n) {
+  game.level = buildLevel(n);
+  game.player = new Player(60, game.level.ground - 60);
+  game.enemies = game.level.enemies.map(e => new Enemy(e.t, e.x, e.y));
+  game.powerups = game.level.powerups.map(p => new Powerup(p.t, p.x, p.y));
+  game.bullets = [];
+  game.bossSpawned = false;
+  game.boss = null;
+  cam.x = 0;
+  // pool de perguntas pela dificuldade
+  const pool = QUESTIONS.filter(q => q.d === n);
+  shuffle(pool);
+  game.questionPool = pool;
+  game.questionIdx = 0;
+  Audio.setMusic(game.level.music);
+}
+function nextQuestion() {
+  if (!game.questionPool || game.questionPool.length===0) {
+    const fallback = QUESTIONS.filter(q => q.d === game.level.num);
+    game.questionPool = shuffle([...fallback]);
+    game.questionIdx = 0;
+  }
+  const q = game.questionPool[game.questionIdx % game.questionPool.length];
+  game.questionIdx++;
+  return q;
+}
+
+/* ----- MENUS -------------------------------------------------------------- */
+function drawMenu(t) {
+  // fundo animado
+  drawBackground('darkweb', t);
+  // título grande pulsante
+  const pulse = 1 + Math.sin(t*3)*0.04;
+  CTX.save();
+  CTX.translate(W/2, 130);
+  CTX.scale(pulse, pulse);
+  CTX.textAlign = 'center';
+  // sombra glitch
+  CTX.fillStyle = '#f0f8'; CTX.font = 'bold 56px monospace';
+  CTX.fillText('CyberJump', 3, 3);
+  CTX.fillStyle = '#0ff'; CTX.fillText('CyberJump', 0, 0);
+  CTX.fillStyle = '#0f5'; CTX.font = 'bold 22px monospace';
+  CTX.fillText('A SAGA DO HACKER BRANCO', 0, 36);
+  CTX.restore();
+  CTX.textAlign = 'left';
+
+  // ícone grande do herói no menu (replica novo sprite escalado 3x)
+  const px = W/2 - 36, py = 200 + Math.sin(t*4)*4;
+  CTX.save();
+  CTX.translate(px, py);
+  CTX.scale(3,3);
+  // capuz exterior
+  CTX.fillStyle = '#080018';
+  CTX.fillRect(6, 0, 12, 2);
+  CTX.fillRect(4, 2, 16, 2);
+  CTX.fillRect(2, 4, 20, 3);
+  CTX.fillRect(0, 7, 24, 6);
+  CTX.fillRect(0, 12, 4, 8);
+  CTX.fillRect(20, 12, 4, 8);
+  // borda neon
+  CTX.fillStyle = '#0ff';
+  CTX.fillRect(6, 0, 12, 1);
+  CTX.fillRect(4, 2, 2, 1); CTX.fillRect(18, 2, 2, 1);
+  CTX.fillRect(2, 4, 1, 3); CTX.fillRect(21, 4, 1, 3);
+  // sombra rosto
+  CTX.fillStyle = '#000005'; CTX.fillRect(5, 5, 14, 9);
+  // visor
+  CTX.fillStyle = '#0a2a3a'; CTX.fillRect(5, 8, 14, 3);
+  CTX.fillStyle = '#0ff';
+  CTX.fillRect(9, 9, 2, 1); CTX.fillRect(15, 9, 2, 1);
+  // boca tech
+  CTX.fillStyle = '#0f5'; CTX.fillRect(9, 12, 6, 1);
+  // hoodie
+  CTX.fillStyle = '#4a1080'; CTX.fillRect(2, 14, 20, 12);
+  CTX.fillStyle = '#6020a8'; CTX.fillRect(2, 14, 20, 2);
+  CTX.fillStyle = '#2a0858'; CTX.fillRect(2, 24, 20, 2);
+  // cordinhas
+  CTX.fillStyle = '#0ff'; CTX.fillRect(9, 15, 1, 5); CTX.fillRect(14, 15, 1, 5);
+  // zíper
+  CTX.fillStyle = '#0ff'; CTX.fillRect(11, 16, 2, 9);
+  // patch binário
+  CTX.fillStyle = '#0f5'; CTX.font='bold 5px monospace';
+  CTX.fillText('01', 4, 22); CTX.fillText('10', 16, 22);
+  // braços + luvas
+  CTX.fillStyle = '#3a0a60'; CTX.fillRect(0, 15, 3, 8); CTX.fillRect(21, 15, 3, 8);
+  CTX.fillStyle = '#0ff'; CTX.fillRect(0, 22, 3, 3); CTX.fillRect(21, 22, 3, 3);
+  // cinto
+  CTX.fillStyle = '#000'; CTX.fillRect(2, 26, 20, 2);
+  CTX.fillStyle = '#fc0'; CTX.fillRect(11, 26, 2, 2);
+  // pernas
+  CTX.fillStyle = '#0a0a20'; CTX.fillRect(5, 28, 5, 4); CTX.fillRect(14, 28, 5, 4);
+  // botas
+  CTX.fillStyle = '#0a2a2a'; CTX.fillRect(4, 31, 7, 3); CTX.fillRect(13, 31, 7, 3);
+  CTX.fillStyle = '#0ff'; CTX.fillRect(4, 33, 7, 1); CTX.fillRect(13, 33, 7, 1);
+  CTX.restore();
+
+  // opções
+  const opts = ['JOGAR', 'COMO JOGAR', 'CRÉDITOS'];
+  for (let i=0;i<opts.length;i++) {
+    const y = 350 + i*42;
+    CTX.fillStyle = (game.menuSel===i) ? '#0ff' : '#0a4040';
+    CTX.fillRect(W/2-140, y-22, 280, 32);
+    CTX.strokeStyle = '#0ff'; CTX.strokeRect(W/2-140, y-22, 280, 32);
+    CTX.fillStyle = (game.menuSel===i) ? '#000' : '#0ff';
+    CTX.font='bold 18px monospace';
+    CTX.textAlign='center';
+    CTX.fillText(opts[i], W/2, y);
+    if (game.menuSel===i) {
+      const blink = Math.floor(t*4)%2;
+      if (blink) {
+        CTX.fillText('▶', W/2-160, y);
+        CTX.fillText('◀', W/2+160, y);
+      }
+    }
+  }
+  CTX.textAlign='left';
+
+  // press start blink
+  if (Math.floor(t*2)%2) {
+    CTX.fillStyle='#fff'; CTX.font='12px monospace'; CTX.textAlign='center';
+    CTX.fillText('▼ ENTER para selecionar — ↑↓ para navegar ▼', W/2, H-30);
+  }
+  CTX.textAlign='left';
+
+  // highscore
+  CTX.fillStyle = '#fc0'; CTX.font='12px monospace'; CTX.textAlign='right';
+  CTX.fillText('MELHOR PONTUAÇÃO: ' + game.highscore, W-12, 28);
+  CTX.textAlign='left';
+}
+
+function drawHow() {
+  drawBackground('matrix', game.time);
+  CTX.fillStyle = '#000a'; CTX.fillRect(40, 40, W-80, H-80);
+  CTX.strokeStyle = '#0ff'; CTX.lineWidth=2; CTX.strokeRect(40, 40, W-80, H-80);
+  CTX.fillStyle = '#0ff'; CTX.font='bold 22px monospace';
+  CTX.fillText('COMO JOGAR', 60, 80);
+  CTX.fillStyle = '#fff'; CTX.font='14px monospace';
+  const lines = [
+    'OBJETIVO: atravessar 3 fases e derrotar Lord Ransomware.',
+    '',
+    'CONTROLES:',
+    '  ← → / A D    — mover',
+    '  ESPAÇO / W / ↑ — pular (duplo com Auth Token)',
+    '  X           — disparar firewall shield',
+    '  ENTER       — confirmar em menus/quiz',
+    '  M           — mudo (música/SFX)',
+    '',
+    'COMBATE: encostar num inimigo abre um QUIZ.',
+    '  Acertou: inimigo eliminado + XP + patches.',
+    '  Errou ou tempo esgotou: você perde uma vida.',
+    '  Atirar (X) também elimina inimigos sem quiz.',
+    '',
+    'POWERUPS:',
+    '  P verde  — patch (pontuação)',
+    '  Chave    — Auth Token (pulo duplo 30s)',
+    '  Escudo   — Firewall Shield (absorve 1 hit)',
+    '  Capa     — Encryption Cloak (invisível 5s)',
+    '  HD       — Backup Heart (+1 vida)',
+    '',
+    'Cuidado com buracos — cair também tira vida.',
+    '',
+    '[ ESC ou ENTER para voltar ao menu ]'
+  ];
+  let y = 110;
+  for (const l of lines) { CTX.fillText(l, 60, y); y += 18; }
+}
+
+function drawCredits() {
+  drawBackground('server', game.time);
+  CTX.fillStyle = '#000a'; CTX.fillRect(40, 40, W-80, H-80);
+  CTX.strokeStyle = '#0ff'; CTX.lineWidth=2; CTX.strokeRect(40, 40, W-80, H-80);
+  CTX.fillStyle = '#0ff'; CTX.font='bold 22px monospace';
+  CTX.fillText('CRÉDITOS', 60, 80);
+  CTX.fillStyle = '#fff'; CTX.font='14px monospace';
+  const lines = [
+    'CYBERJUMP — A SAGA DO HACKER BRANCO',
+    '',
+    'DESIGN E PROGRAMAÇÃO:',
+    '  Andréa Barbosa Araújo',
+    '',
+    'ARTE PIXEL:',
+    '  Desenhada via Canvas API em runtime',
+    '',
+    'MÚSICA & SFX:',
+    '  Sintetizados via Web Audio API (chiptune ao vivo)',
+    '',
+    'PERGUNTAS DE SEGURANÇA:',
+    '  Baseadas em conteúdo real (OWASP, NIST, CVEs históricas)',
+    '',
+    'AGRADECIMENTOS:',
+    '  À comunidade de cibersegurança que protege a rede',
+    '  para que pessoas como o Pentester Pixel possam',
+    '  realmente fazer o seu trabalho :)',
+    '',
+    '[ ESC ou ENTER para voltar ao menu ]'
+  ];
+  let y = 110;
+  for (const l of lines) { CTX.fillText(l, 60, y); y += 18; }
+}
+
+function drawIntro(t) {
+  drawBackground('matrix', t);
+  // terminal hacker
+  CTX.fillStyle = '#000c'; CTX.fillRect(60, 60, W-120, H-120);
+  CTX.strokeStyle = '#0f5'; CTX.strokeRect(60, 60, W-120, H-120);
+  CTX.fillStyle = '#0f5'; CTX.font = 'bold 13px monospace';
+  CTX.fillText('CYBER_TERMINAL v3.14 — [SECURE TUNNEL ACTIVE]', 80, 84);
+  CTX.fillStyle = '#fff'; CTX.font = '15px monospace';
+  const reveal = Math.floor(game.introTimer * 18);
+  let y = 130, count = 0;
+  for (let i=0;i<game.introMsgs.length;i++) {
+    const line = game.introMsgs[i];
+    const lineEnd = count + line.length;
+    if (reveal >= count) {
+      const slice = line.slice(0, Math.max(0, reveal - count));
+      const isCmd = line.startsWith('>');
+      CTX.fillStyle = isCmd ? '#0f5' : (line.startsWith('[') ? '#0ff' : '#fff');
+      CTX.fillText(slice, 80, y);
+    }
+    count = lineEnd + 1;
+    y += 24;
+  }
+  // cursor pisca
+  if (Math.floor(t*3)%2) {
+    CTX.fillStyle = '#0f5';
+    CTX.fillRect(80, y-8, 8, 14);
+  }
+}
+
+function drawTransition(t) {
+  drawBackground('server', t);
+  CTX.fillStyle = '#000c'; CTX.fillRect(0,0,W,H);
+  CTX.fillStyle = '#0ff'; CTX.font='bold 30px monospace';
+  CTX.textAlign='center';
+  if (game.transTimer < 1.6) {
+    CTX.fillText('LOADING...', W/2, H/2 - 30);
+    CTX.fillStyle='#fc0'; CTX.font='bold 18px monospace';
+    CTX.fillText('DECRYPTING NEXT LEVEL', W/2, H/2 + 10);
+    // barra
+    const p = clamp(game.transTimer / 1.6, 0, 1);
+    CTX.strokeStyle='#0ff'; CTX.strokeRect(W/2-160, H/2+40, 320, 16);
+    CTX.fillStyle='#0ff'; CTX.fillRect(W/2-158, H/2+42, 316*p, 12);
+  } else {
+    CTX.fillText('FASE ' + game.levelNum + ' COMPLETA!', W/2, H/2 - 60);
+    CTX.fillStyle='#fff'; CTX.font='15px monospace';
+    CTX.fillText('Patches coletados: ' + game.stats.patches, W/2, H/2 - 10);
+    CTX.fillText('Acertos: ' + game.stats.correct + '  Erros: ' + game.stats.wrong, W/2, H/2 + 14);
+    CTX.fillText('Inimigos derrotados: ' + game.stats.defeated, W/2, H/2 + 38);
+    if (Math.floor(t*2)%2) {
+      CTX.fillStyle='#fc0'; CTX.fillText('[ ENTER para continuar ]', W/2, H/2 + 80);
+    }
+  }
+  CTX.textAlign='left';
+}
+
+function drawGameOver(t) {
+  drawBackground('darkweb', t);
+  // glitch
+  CTX.fillStyle = '#000c'; CTX.fillRect(0,0,W,H);
+  for (let i=0;i<6;i++) {
+    CTX.globalAlpha = 0.15;
+    CTX.fillStyle = ['#f00','#0ff','#f0f','#ff0','#fff','#0f5'][i%6];
+    CTX.fillRect(0, Math.random()*H, W, 3+Math.random()*10);
+  }
+  CTX.globalAlpha = 1;
+  CTX.textAlign='center';
+  CTX.fillStyle='#f00'; CTX.font='bold 56px monospace';
+  CTX.fillText('SYSTEM COMPROMISED', W/2 + ((Math.random()*6-3)|0), H/2 - 40);
+  CTX.fillStyle='#fff'; CTX.font='18px monospace';
+  CTX.fillText('Lord Ransomware criptografou seus dados.', W/2, H/2 + 10);
+  CTX.fillStyle='#0ff'; CTX.font='14px monospace';
+  CTX.fillText('Patches: ' + game.stats.patches + '  |  Acertos: ' + game.stats.correct + '/' + (game.stats.correct+game.stats.wrong), W/2, H/2 + 50);
+  if (Math.floor(t*2)%2) {
+    CTX.fillStyle='#fc0'; CTX.font='bold 16px monospace';
+    CTX.fillText('[ ENTER para tentar novamente ]', W/2, H/2 + 100);
+  }
+  CTX.textAlign='left';
+}
+
+function drawWin(t) {
+  drawBackground('matrix', t);
+  CTX.fillStyle = '#000a'; CTX.fillRect(0,0,W,H);
+  CTX.textAlign='center';
+  CTX.fillStyle='#0f5'; CTX.font='bold 36px monospace';
+  CTX.fillText('ACCESS GRANTED', W/2, 80);
+  CTX.fillStyle='#0ff'; CTX.font='bold 20px monospace';
+  CTX.fillText('Lord Ransomware foi neutralizado.', W/2, 120);
+  CTX.fillText('O mundo está seguro... por enquanto.', W/2, 150);
+
+  // créditos rolando
+  CTX.font='14px monospace'; CTX.fillStyle='#fff';
+  const credits = [
+    '== FINAL DA OPERAÇÃO ==',
+    '',
+    'PATCHES COLETADOS: ' + game.stats.patches,
+    'INIMIGOS DERROTADOS: ' + game.stats.defeated,
+    'RESPOSTAS CORRETAS: ' + game.stats.correct,
+    'RESPOSTAS ERRADAS: ' + game.stats.wrong,
+    'TEMPO TOTAL: ' + Math.floor(game.totalTime) + 's',
+    'XP TOTAL: ' + game.stats.xp,
+    'PONTUAÇÃO FINAL: ' + finalScore(),
+    '',
+    '— MELHOR PONTUAÇÃO: ' + game.highscore + ' —',
+    '',
+    'Pentester Pixel agradece a todos',
+    'os hackers éticos que mantêm a internet',
+    'um lugar um pouquinho menos perigoso.',
+    '',
+    '[ ENTER para voltar ao menu ]'
+  ];
+  let y = 200;
+  for (const l of credits) { CTX.fillText(l, W/2, y); y += 22; }
+  CTX.textAlign='left';
+}
+
+function finalScore() {
+  return game.stats.patches*10 + game.stats.correct*50 + game.stats.defeated*20 + game.stats.xp;
+}
+
+/* ----- COLLISIONS / GAME LOGIC ------------------------------------------- */
+function checkCollisions() {
+  if (!game.player || game.player.dead) return;
+
+  // powerups
+  for (const p of game.powerups) {
+    if (!p.alive) continue;
+    if (rectsOverlap(game.player.hitbox, p.hitbox)) {
+      p.alive = false;
+      applyPowerup(p.t);
+    }
+  }
+  // bullets vs enemies
+  for (const b of game.bullets) {
+    if (!b.friendly || b.life<=0) continue;
+    for (const e of game.enemies) {
+      if (!e.alive) continue;
+      if (rectsOverlap({x:b.x,y:b.y,w:b.w,h:b.h}, e.hitbox)) {
+        e.hit(b.dmg || 1);
+        b.life = 0;
+        if (!e.alive) {
+          game.stats.defeated++;
+          game.stats.xp += (e.t === 'boss' ? 200 : e.t === 'dragon' ? 60 : 15);
+          if (game.stats.xp >= game.stats.xpMax) { game.stats.xpMax += 40; }
+        }
+        break;
+      }
+    }
+  }
+  // bullets vs player (inimigos)
+  for (const b of game.bullets) {
+    if (b.friendly || b.life<=0) continue;
+    if (rectsOverlap({x:b.x,y:b.y,w:b.w,h:b.h}, game.player.hitbox)) {
+      b.life = 0;
+      const real = game.player.takeHit();
+      if (real && game.player.lives <= 0) endGame(false);
+    }
+  }
+
+  // player vs enemies → quiz (ou dano direto na boss fight)
+  for (const e of game.enemies) {
+    if (!e.alive) continue;
+    if (rectsOverlap(game.player.hitbox, e.hitbox)) {
+      if (game.player.cloakT > 0) continue; // invisível: passa
+      if (game.player.invuln > 0) continue;
+      // ataque por cima (pisada) — abate goomba sem quiz, igual no Mario
+      if (e.t === 'goomba' && game.player.vy > 80 && (game.player.y + game.player.h) - e.y < 18) {
+        e.hit(99);
+        game.player.vy = -340;
+        game.stats.defeated++;
+        game.stats.xp += 15;
+        Audio.sfx.coin();
+        continue;
+      }
+      // Durante boss fight: contato direto = dano (sem quiz)
+      if (game.boss && (e.t === 'boss' || e.t === 'ddos')) {
+        const real = game.player.takeHit();
+        if (real) {
+          // empurra player pra trás
+          game.player.vx = (game.player.x < e.x ? -1 : 1) * 320;
+          game.player.vy = -280;
+        }
+        if (real && game.player.lives <= 0) endGame(false);
+        return;
+      }
+      // dispara quiz (jogo normal)
+      triggerQuiz(e);
+      return;
+    }
+  }
+
+  // goal
+  if (game.player.x + game.player.w >= game.level.goalX) {
+    completeLevel();
+  }
+}
+
+function applyPowerup(t) {
+  Audio.sfx.power();
+  switch(t) {
+    case 'patch':  game.stats.patches++; game.stats.xp += 5; spawnBurst(game.player.x+12, game.player.y+12, 12, '#0f8', 120, 0.5, 2); break;
+    case 'token':  game.player.tokenT = 30; spawnBurst(game.player.x+12, game.player.y+12, 14, '#fc0', 140, 0.6, 3); break;
+    case 'shield': game.player.shieldT = 999; spawnBurst(game.player.x+12, game.player.y+12, 14, '#4af', 140, 0.6, 3); break;
+    case 'cloak':  game.player.cloakT = 5; spawnBurst(game.player.x+12, game.player.y+12, 14, '#a0f', 140, 0.6, 3); break;
+    case 'heart':  game.player.lives++; spawnBurst(game.player.x+12, game.player.y+12, 18, '#f33', 160, 0.7, 3); break;
+  }
+  if (game.stats.xp >= game.stats.xpMax) game.stats.xpMax += 40;
+}
+
+function triggerQuiz(enemy) {
+  game.pendingEnemy = enemy;
+  game.state = STATE.QUIZ;
+  const q = nextQuestion();
+  game.quiz = new Quiz(q, (result) => {
+    if (result.correct) {
+      game.stats.correct++;
+      enemy.hit(99);
+      game.stats.defeated++;
+      game.stats.xp += (enemy.t==='boss'?300:enemy.t==='dragon'?80:25);
+      // bônus de patches por acerto
+      game.stats.patches += (enemy.t==='boss'?20:enemy.t==='dragon'?5:2);
+      addShake(3);
+    } else {
+      game.stats.wrong++;
+      const dead = game.player.takeHit();
+      if (dead && game.player.lives <= 0) { endGame(false); return; }
+      // empurra player pra trás
+      game.player.vx = (game.player.x < enemy.x ? -1 : 1) * 300;
+      game.player.vy = -250;
+      game.player.invuln = 1.5;
+    }
+    if (game.stats.xp >= game.stats.xpMax) game.stats.xpMax += 40;
+    game.quiz = null;
+    game.pendingEnemy = null;
+    game.state = STATE.PLAY;
+  });
+}
+
+function completeLevel() {
+  if (game.levelNum < 3) {
+    game.state = STATE.TRANS;
+    game.transTimer = 0;
+    Audio.sfx.portal();
+  } else {
+    // Fase 3: a vitória é gerenciada pelo updateBossFight (após anim de morte).
+    if (!game.bossSpawned) { spawnBoss(); return; }
+    // se boss ainda vivo ou em anim de morte: ignora
+  }
+}
+
+function spawnBoss() {
+  const arenaLeft = 4050;
+  const arenaRight = 4790;
+  const ground = game.level.ground;
+  const boss = new Enemy('boss', arenaLeft + 290, ground - 130);
+  boss.hp = 30; boss.hpMax = 30;
+  game.enemies.push(boss);
+  game.bossSpawned = true;
+
+  // Plataformas extras dentro da arena
+  game.level.platforms.push({x: arenaLeft+140, y: ground-150, w: 90, h: 14, arena:true});
+  game.level.platforms.push({x: arenaLeft+520, y: ground-150, w: 90, h: 14, arena:true});
+  game.level.platforms.push({x: arenaLeft+330, y: ground-240, w: 110, h: 14, arena:true});
+
+  // Inicializa estado da boss fight
+  game.boss = {
+    phase: 1,
+    arenaLeft, arenaRight,
+    hostages: [
+      makeHostage(arenaLeft + 140, ground - 200, 'HOSPITAL.dat'),
+      makeHostage(arenaLeft + 590, ground - 200, 'FAMILY.jpg'),
+      makeHostage(arenaLeft + 350, ground - 300, 'COMPANY.xls'),
+      makeHostage(arenaLeft + 280, ground - 380, 'BACKUP.zip'),
+      makeHostage(arenaLeft + 430, ground - 380, 'PHOTOS.png'),
+    ],
+    terminals: [
+      makeTerminal(arenaLeft + 16, ground - 56),
+      makeTerminal(arenaRight - 50, ground - 56),
+    ],
+    patchZero: null,
+    decryptionKeys: 0,
+    decryptionBeamT: 0,
+    dialog: 'BEM-VINDO À MINHA REDE, PENTESTER!',
+    dialogT: 4,
+    minionT: 8,
+    patchZeroBuffT: 0,
+    patchZeroSpawnT: -1, // ainda não agendado
+    phaseChangeFreezeT: 0,
+    bossDeadT: -1,
+  };
+
+  // Drop o player perto do início da arena se ele entrou correndo demais
+  if (game.player.x > arenaLeft + 100) game.player.x = arenaLeft + 60;
+
+  Audio.setMusic('boss');
+  Audio.sfx.boss();
+  addShake(15);
+}
+
+function makeHostage(x, y, name) {
+  return { x, y, ox: x, oy: y, w: 26, h: 22, name, alive: true, t0: Math.random()*Math.PI*2 };
+}
+function makeTerminal(x, y) {
+  return { x, y, w: 36, h: 60, active: false, lastUsed: -999, activatedAt: 0 };
+}
+
+function onBossPhaseChange(newPhase) {
+  const bf = game.boss; if (!bf) return;
+  bf.phase = newPhase;
+  bf.phaseChangeFreezeT = 0.6;
+  addShake(12);
+  if (newPhase === 2) {
+    bf.dialog = '"BACKUPS NÃO VÃO ME SALVAR DE VOCÊ?!"';
+    bf.dialogT = 4;
+    bf.minionT = 2.5;
+    // Reaquece terminais
+    bf.terminals.forEach(t => { t.lastUsed = -999; });
+    spawnBurst(game.player.x, game.player.y, 30, '#0ff', 200, 0.7, 3);
+  } else if (newPhase === 3) {
+    bf.dialog = '"MODO PÂNICO! ENCRIPTO TUDO!"';
+    bf.dialogT = 4;
+    bf.patchZeroSpawnT = 1.5;
+    spawnBurst(game.player.x, game.player.y, 40, '#f0f', 250, 0.8, 3);
+  }
+}
+
+function updateBossFight(dt) {
+  const bf = game.boss; if (!bf) return;
+  const boss = game.enemies.find(e => e.t==='boss');
+  if (!boss) return;
+  const ground = game.level.ground;
+
+  // freeze de transição
+  if (bf.phaseChangeFreezeT > 0) bf.phaseChangeFreezeT -= dt;
+  if (bf.dialogT > 0) bf.dialogT -= dt;
+
+  // Trava player na arena
+  if (game.player.x < bf.arenaLeft + 10) {
+    game.player.x = bf.arenaLeft + 10;
+    if (game.player.vx < 0) game.player.vx = 0;
+  }
+  if (game.player.x + game.player.w > bf.arenaRight - 10) {
+    game.player.x = bf.arenaRight - 10 - game.player.w;
+    if (game.player.vx > 0) game.player.vx = 0;
+  }
+
+  // ===== HOSTAGES (rescue → decryption key) =====
+  for (const h of bf.hostages) {
+    if (!h.alive) continue;
+    h.t0 += dt;
+    h.x = h.ox + Math.sin(h.t0*1.2)*16;
+    h.y = h.oy + Math.cos(h.t0*1.0)*10;
+    if (rectsOverlap(game.player.hitbox, h)) {
+      h.alive = false;
+      bf.decryptionKeys = Math.min(3, bf.decryptionKeys + 1);
+      game.stats.patches += 5;
+      game.stats.xp += 30;
+      spawnBurst(h.x+h.w/2, h.y+h.h/2, 30, '#0ff', 250, 0.8, 3);
+      spawnBurst(h.x+h.w/2, h.y+h.h/2, 15, '#fc0', 180, 0.6, 2);
+      Audio.sfx.power();
+      bf.dialog = '✓ ARQUIVO RECUPERADO: ' + h.name + ' (' + bf.decryptionKeys + '/3)';
+      bf.dialogT = 2.2;
+    }
+  }
+
+  // ===== TERMINAIS DE BACKUP =====
+  const nowS = performance.now()/1000;
+  for (const t of bf.terminals) {
+    if (t.active) continue;
+    if (nowS - t.lastUsed < 10) continue;
+    if (rectsOverlap(game.player.hitbox, {x:t.x, y:t.y, w:t.w, h:t.h})) {
+      t.active = true;
+      t.activatedAt = nowS;
+      spawnBurst(t.x+t.w/2, t.y, 18, '#0f5', 180, 0.6, 3);
+      Audio.sfx.select();
+      bf.dialog = 'TERMINAL ATIVADO — ATIVE O OUTRO EM 5s!';
+      bf.dialogT = 2;
+    }
+  }
+  // Dois ativos: BACKUP RESTORE
+  if (bf.terminals[0].active && bf.terminals[1].active) {
+    boss.hp -= 4;
+    game.player.lives = Math.min(5, game.player.lives + 1);
+    bf.dialog = '★ BACKUP RESTORE EXECUTADO! Boss -4 HP / +1 vida';
+    bf.dialogT = 2.8;
+    spawnBurst(boss.x+boss.w/2, boss.y+boss.h/2, 80, '#0f5', 300, 1.2, 4);
+    Audio.sfx.correct();
+    Audio.sfx.power();
+    addShake(10);
+    bf.terminals.forEach(tt => { tt.active = false; tt.lastUsed = nowS; });
+  } else {
+    // expira ativação solo após 5s
+    for (const t of bf.terminals) {
+      if (t.active && nowS - t.activatedAt > 5) {
+        t.active = false; t.lastUsed = nowS - 6; // disponível em ~4s
+      }
+    }
+  }
+
+  // ===== MINIONS DDoS (fase 2+) =====
+  if (bf.phase >= 2 && bf.bossDeadT < 0) {
+    bf.minionT -= dt;
+    if (bf.minionT <= 0) {
+      bf.minionT = bf.phase === 3 ? 3.5 : 5.5;
+      const mx = boss.x + boss.w/2 + (Math.random()*200-100);
+      const e = new Enemy('ddos', mx, ground - 230);
+      e.origX = e.x; e.origY = e.y;
+      game.enemies.push(e);
+    }
+  }
+
+  // ===== PATCH ZERO (fase 3) =====
+  if (bf.phase === 3 && bf.patchZeroSpawnT > 0) {
+    bf.patchZeroSpawnT -= dt;
+    if (bf.patchZeroSpawnT <= 0 && !bf.patchZero) {
+      bf.patchZero = { x: bf.arenaLeft + 370, y: ground - 290, w: 24, h: 24, t0: 0, alive: true };
+      bf.dialog = '✦ PATCH ZERO MATERIALIZADO — PEGUE-O!';
+      bf.dialogT = 3;
+      Audio.sfx.portal();
+      spawnBurst(bf.patchZero.x+12, bf.patchZero.y+12, 30, '#fc0', 250, 0.8, 3);
+    }
+  }
+  if (bf.patchZero && bf.patchZero.alive) {
+    bf.patchZero.t0 += dt;
+    if (rectsOverlap(game.player.hitbox, bf.patchZero)) {
+      bf.patchZero.alive = false;
+      bf.patchZeroBuffT = 5;
+      game.player.invuln = 5;
+      bf.dialog = '✦ PATCH ZERO ATIVO! INVENCÍVEL + TIRO TRIPLO 5s';
+      bf.dialogT = 3;
+      Audio.sfx.power();
+      Audio.sfx.correct();
+      spawnBurst(game.player.x+12, game.player.y+12, 50, '#fc0', 300, 1, 4);
+      addShake(8);
+    }
+  }
+  if (bf.patchZeroBuffT > 0) bf.patchZeroBuffT -= dt;
+
+  // ===== DECRYPTION BEAM (tecla C) =====
+  if (bf.decryptionBeamT > 0) {
+    bf.decryptionBeamT -= dt;
+    boss.hp -= 4 * dt; // 4 dmg/s durante o feixe
+    if (Math.random() < 0.6)
+      spawnBurst(boss.x+boss.w/2 + (Math.random()*60-30), boss.y+boss.h/2 + (Math.random()*60-30),
+                 3, ['#f0f','#0ff','#ff0','#0f5'][Math.floor(Math.random()*4)], 100, 0.3, 2);
+  }
+  if (pollPressed('c')) {
+    if (bf.decryptionKeys >= 3) {
+      bf.decryptionKeys = 0;
+      bf.decryptionBeamT = 1.5;
+      bf.dialog = '⚡ DECRYPTION BEAM ATIVADO!';
+      bf.dialogT = 2.2;
+      Audio.sfx.shoot();
+      Audio.sfx.correct();
+      spawnBurst(game.player.x+12, game.player.y+16, 30, '#f0f', 220, 0.7, 3);
+      addShake(6);
+    } else {
+      bf.dialog = 'PRECISA DE 3 CHAVES DE DECRYPTION (' + bf.decryptionKeys + '/3)';
+      bf.dialogT = 1.5;
+      Audio.sfx.wrong();
+    }
+  }
+
+  // ===== TIRO TRIPLO durante patch zero =====
+  // Está em Player.shoot (checa bf.patchZeroBuffT)
+
+  // ===== BOSS DEATH =====
+  if (boss.alive && boss.hp <= 0) {
+    boss.hp = 0;
+    bf.bossDeadT = 0;
+    bf.dialog = 'NÃO... DECRYPT... IMPOSSÍVEL... ✗';
+    bf.dialogT = 5;
+    addShake(20);
+    spawnBurst(boss.x+boss.w/2, boss.y+boss.h/2, 100, '#f00', 400, 1.5, 5);
+    spawnBurst(boss.x+boss.w/2, boss.y+boss.h/2, 50, '#fc0', 300, 1.2, 4);
+    Audio.sfx.correct();
+  }
+  if (bf.bossDeadT >= 0) {
+    bf.bossDeadT += dt;
+    // pequenas explosões durante 2.5s
+    if (Math.random()<0.3) {
+      spawnBurst(boss.x + Math.random()*boss.w, boss.y + Math.random()*boss.h,
+                 8, ['#f00','#fc0','#fff'][Math.floor(Math.random()*3)], 200, 0.6, 3);
+    }
+    if (bf.bossDeadT > 2.6) {
+      boss.alive = false;
+      endGame(true);
+    }
+  }
+}
+
+function drawBossFight() {
+  const bf = game.boss; if (!bf) return;
+
+  // === Paredes da arena (visual de jaula) ===
+  CTX.fillStyle = '#400';
+  CTX.fillRect(bf.arenaLeft - cam.x - 4, 0, 4, H);
+  CTX.fillRect(bf.arenaRight - cam.x, 0, 4, H);
+  for (let i=0;i<H;i+=20) {
+    if ((i + Math.floor(performance.now()/50)) % 40 < 10) {
+      CTX.fillStyle = '#f00';
+      CTX.fillRect(bf.arenaLeft - cam.x - 4, i, 4, 10);
+      CTX.fillRect(bf.arenaRight - cam.x, i, 4, 10);
+    }
+  }
+  // texto na parede
+  CTX.fillStyle = '#f44';
+  CTX.font = 'bold 9px monospace';
+  for (let i=80;i<H-50;i+=80) {
+    CTX.save(); CTX.translate(bf.arenaLeft - cam.x - 12, i); CTX.rotate(-Math.PI/2);
+    CTX.fillText('ENCRYPTED ZONE', 0, 0); CTX.restore();
+    CTX.save(); CTX.translate(bf.arenaRight - cam.x + 18, i); CTX.rotate(Math.PI/2);
+    CTX.fillText('ENCRYPTED ZONE', 0, 0); CTX.restore();
+  }
+
+  // === Hostages flutuando ===
+  for (const h of bf.hostages) {
+    if (!h.alive) continue;
+    const x = h.x - cam.x, y = h.y;
+    const pulse = 0.4 + 0.3*Math.sin(h.t0*3);
+    CTX.globalAlpha = pulse;
+    CTX.fillStyle = '#ff0';
+    CTX.fillRect(x-5, y-5, h.w+10, h.h+10);
+    CTX.globalAlpha = 1;
+    // file icon (papel)
+    CTX.fillStyle = '#fff';
+    CTX.fillRect(x, y, h.w, h.h);
+    // canto dobrado
+    CTX.fillStyle = '#bbb';
+    CTX.fillRect(x+h.w-6, y, 6, 6);
+    CTX.fillStyle = '#888';
+    CTX.fillRect(x+h.w-6, y+5, 6, 1);
+    CTX.fillRect(x+h.w-1, y, 1, 6);
+    // linhas do documento
+    CTX.fillStyle = '#888';
+    CTX.fillRect(x+3, y+6, h.w-6, 1);
+    CTX.fillRect(x+3, y+10, h.w-6, 1);
+    CTX.fillRect(x+3, y+14, h.w-9, 1);
+    CTX.fillRect(x+3, y+18, h.w-6, 1);
+    // cadeado overlay
+    CTX.fillStyle = '#a00';
+    CTX.fillRect(x+h.w/2-4, y+h.h/2, 8, 7);
+    CTX.fillStyle = '#fc0';
+    CTX.fillRect(x+h.w/2-3, y+h.h/2-4, 6, 5);
+    CTX.fillStyle = '#a00';
+    CTX.fillRect(x+h.w/2-2, y+h.h/2-3, 4, 3);
+    CTX.fillStyle = '#000';
+    CTX.fillRect(x+h.w/2-1, y+h.h/2+2, 2, 2);
+    // nome do arquivo flutuando
+    CTX.fillStyle = '#ff0';
+    CTX.font = 'bold 8px monospace';
+    CTX.textAlign='center';
+    CTX.fillText(h.name, x+h.w/2, y-4);
+    CTX.textAlign='left';
+  }
+
+  // === Terminais ===
+  for (const t of bf.terminals) {
+    const x = t.x - cam.x, y = t.y;
+    const nowS = performance.now()/1000;
+    const available = !t.active && nowS - t.lastUsed >= 10;
+    // base do tripé
+    CTX.fillStyle = '#111';
+    CTX.fillRect(x-4, y+t.h-6, t.w+8, 6);
+    // gabinete
+    CTX.fillStyle = '#222';
+    CTX.fillRect(x, y, t.w, t.h);
+    CTX.fillStyle = '#444';
+    CTX.fillRect(x, y, t.w, 4);
+    // tela
+    let screenCol;
+    if (t.active) screenCol = '#0f5';
+    else if (!available) screenCol = '#400';
+    else screenCol = (Math.floor(nowS*3)%2) ? '#08f' : '#048';
+    CTX.fillStyle = '#000';
+    CTX.fillRect(x+4, y+8, t.w-8, 28);
+    CTX.fillStyle = screenCol;
+    CTX.fillRect(x+6, y+10, t.w-12, 24);
+    CTX.fillStyle = '#000';
+    CTX.font = 'bold 9px monospace';
+    CTX.textAlign='center';
+    CTX.fillText(t.active ? 'OK' : (available?'BKP':'WAIT'), x+t.w/2, y+25);
+    CTX.textAlign='left';
+    // LED
+    CTX.fillStyle = t.active ? '#0f0' : (available && Math.floor(nowS*4)%2 ? '#0af' : '#012');
+    CTX.fillRect(x+t.w-9, y+40, 5, 5);
+    // label
+    CTX.fillStyle = '#0ff';
+    CTX.font = 'bold 8px monospace';
+    CTX.textAlign='center';
+    CTX.fillText('BACKUP', x+t.w/2, y-6);
+    CTX.textAlign='left';
+    // aura quando disponível
+    if (available) {
+      CTX.globalAlpha = 0.15 + 0.15*Math.sin(nowS*4);
+      CTX.fillStyle = '#08f';
+      CTX.fillRect(x-8, y-8, t.w+16, t.h+16);
+      CTX.globalAlpha = 1;
+    }
+  }
+
+  // === Patch Zero ===
+  if (bf.patchZero && bf.patchZero.alive) {
+    const p = bf.patchZero;
+    const x = p.x - cam.x, y = p.y + Math.sin(p.t0*3)*5;
+    for (let i=3;i>=1;i--) {
+      CTX.globalAlpha = 0.18 / i;
+      CTX.fillStyle = '#fc0';
+      CTX.fillRect(x-i*5, y-i*5, p.w+i*10, p.h+i*10);
+    }
+    CTX.globalAlpha = 1;
+    // disco dourado
+    CTX.fillStyle = '#fc0';
+    CTX.fillRect(x, y, p.w, p.h);
+    CTX.fillStyle = '#fa0';
+    CTX.fillRect(x+2, y+p.h-3, p.w-4, 3);
+    CTX.fillStyle = '#ff6';
+    CTX.fillRect(x+2, y+2, p.w-4, 3);
+    // símbolo Ø
+    CTX.fillStyle = '#000';
+    CTX.font = 'bold 16px monospace';
+    CTX.textAlign='center';
+    CTX.fillText('Ø', x+p.w/2, y+18);
+    // label
+    CTX.fillStyle = '#fc0';
+    CTX.font = 'bold 8px monospace';
+    CTX.fillText('PATCH ZERO', x+p.w/2, y-6);
+    CTX.textAlign='left';
+  }
+
+  // === Decryption Beam ===
+  if (bf.decryptionBeamT > 0) {
+    const boss = game.enemies.find(e => e.t==='boss');
+    if (boss && boss.alive) {
+      const p = game.player;
+      const ptx = p.x + p.w/2 - cam.x;
+      const pty = p.y + p.h/2;
+      const btx = boss.x + boss.w/2 - cam.x;
+      const bty = boss.y + boss.h/2;
+      const colors = ['#f0f','#0ff','#ff0','#0f5','#fff'];
+      for (let i=0;i<5;i++) {
+        CTX.strokeStyle = colors[i];
+        CTX.lineWidth = 9 - i*1.5;
+        CTX.globalAlpha = 0.85 - i*0.12;
+        CTX.beginPath();
+        CTX.moveTo(ptx + (Math.random()*6-3), pty + (Math.random()*6-3));
+        CTX.lineTo(btx + (Math.random()*6-3), bty + (Math.random()*6-3));
+        CTX.stroke();
+      }
+      CTX.globalAlpha = 1;
+    }
+  }
+
+  // === HP bar do boss ===
+  const boss = game.enemies.find(e => e.t==='boss');
+  if (boss) {
+    const bw = 460, bh = 18;
+    const bx = (W-bw)/2, by = 50;
+    CTX.fillStyle = '#000d';
+    CTX.fillRect(bx-6, by-22, bw+12, bh+44);
+    CTX.fillStyle = '#fff';
+    CTX.font = 'bold 12px monospace';
+    CTX.textAlign='center';
+    CTX.fillText('☠ LORD RANSOMWARE ☠   —   FASE ' + bf.phase + '/3', W/2, by-6);
+    CTX.textAlign='left';
+    CTX.fillStyle = '#200';
+    CTX.fillRect(bx, by, bw, bh);
+    const pct = Math.max(0, boss.hp / boss.hpMax);
+    const grad = CTX.createLinearGradient(bx, by, bx+bw, by);
+    grad.addColorStop(0, '#700'); grad.addColorStop(0.5, '#f00'); grad.addColorStop(1, '#f60');
+    CTX.fillStyle = grad;
+    CTX.fillRect(bx, by, bw*pct, bh);
+    // divisões de fase
+    CTX.fillStyle = '#fff8';
+    CTX.fillRect(bx + bw*0.33, by-2, 2, bh+4);
+    CTX.fillRect(bx + bw*0.66, by-2, 2, bh+4);
+    CTX.strokeStyle = '#f88';
+    CTX.lineWidth = 2;
+    CTX.strokeRect(bx, by, bw, bh);
+    CTX.fillStyle = '#fff';
+    CTX.font = 'bold 10px monospace';
+    CTX.textAlign='center';
+    CTX.fillText(Math.ceil(boss.hp) + ' / ' + boss.hpMax, W/2, by+13);
+    CTX.textAlign='left';
+
+    // Chaves de decryption no canto direito
+    const kx = bx + bw + 14;
+    CTX.fillStyle = '#0ff';
+    CTX.font = 'bold 8px monospace';
+    CTX.fillText('DECRYPT KEYS', kx, by-4);
+    for (let i=0;i<3;i++) {
+      const filled = i < bf.decryptionKeys;
+      CTX.fillStyle = filled ? '#0ff' : '#024';
+      CTX.fillRect(kx + i*14, by+2, 11, 14);
+      CTX.fillStyle = filled ? '#fff' : '#012';
+      CTX.fillRect(kx + i*14 + 4, by+5, 3, 4);
+      CTX.fillStyle = filled ? '#0aa' : '#011';
+      CTX.fillRect(kx + i*14 + 3, by+9, 5, 5);
+    }
+    CTX.fillStyle = bf.decryptionKeys>=3 ? '#0ff' : '#888';
+    CTX.font = 'bold 9px monospace';
+    CTX.fillText('[C]', kx + 46, by+13);
+
+    // Buff Patch Zero
+    if (bf.patchZeroBuffT > 0) {
+      CTX.fillStyle = '#fc0';
+      CTX.font = 'bold 12px monospace';
+      CTX.textAlign='center';
+      CTX.fillText('★ PATCH ZERO: ' + bf.patchZeroBuffT.toFixed(1) + 's ★', W/2, by + bh + 14);
+      CTX.textAlign='left';
+    }
+  }
+
+  // === Diálogo ===
+  if (bf.dialog && bf.dialogT > 0) {
+    const alpha = Math.min(1, bf.dialogT*2);
+    CTX.globalAlpha = alpha;
+    CTX.font = 'bold 13px monospace';
+    const tw = CTX.measureText(bf.dialog).width;
+    const dx = (W - tw - 40)/2, dy = H - 130;
+    CTX.fillStyle = '#000d';
+    CTX.fillRect(dx, dy, tw+40, 30);
+    CTX.strokeStyle = '#f00';
+    CTX.lineWidth = 2;
+    CTX.strokeRect(dx, dy, tw+40, 30);
+    CTX.fillStyle = '#fff';
+    CTX.fillText(bf.dialog, dx+20, dy+20);
+    CTX.globalAlpha = 1;
+  }
+
+  // === Dica de mecânica (sticky) ===
+  CTX.fillStyle = '#000a';
+  CTX.fillRect(8, H-72, 280, 64);
+  CTX.strokeStyle = '#0ff'; CTX.lineWidth=1;
+  CTX.strokeRect(8, H-72, 280, 64);
+  CTX.fillStyle = '#0ff';
+  CTX.font = 'bold 9px monospace';
+  CTX.fillText('PODERES ÉTICOS:', 14, H-58);
+  CTX.fillStyle = '#fff';
+  CTX.font = '9px monospace';
+  CTX.fillText('• Resgate ARQUIVOS amarelos → DECRYPT KEY', 14, H-44);
+  CTX.fillText('• Ative os 2 BACKUPs simultâneos → -4 HP +vida', 14, H-30);
+  CTX.fillText('• Pegue o PATCH ZERO (fase 3) → invencível 5s', 14, H-16);
+}
+
+function endGame(win) {
+  game.totalTime = (performance.now() - game.startTime) / 1000;
+  const score = finalScore();
+  if (score > game.highscore) {
+    game.highscore = score;
+    localStorage.setItem('cyberjump_hs', String(score));
+  }
+  game.state = win ? STATE.WIN : STATE.GAMEOVER;
+}
+
+/* ----- MAIN LOOP ---------------------------------------------------------- */
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now-last)/1000);
+  last = now;
+  game.time += dt;
+  update(dt);
+  render(dt);
+  requestAnimationFrame(loop);
+}
+
+function update(dt) {
+  // sincroniza UI de toque + auto-fire dos botões
+  syncTouchUI();
+  tickHeldRepeats();
+
+  // mute global
+  if (pollPressed('m')) Audio.toggleMute();
+
+  // shake decai sempre (não só em PLAY) pra não persistir em outras telas
+  shake = Math.max(0, shake - dt*40);
+  if (game.state !== STATE.PLAY) shake = 0;
+
+  // música contínua nos estados certos
+  if (game.state===STATE.PLAY || game.state===STATE.QUIZ || game.state===STATE.MENU) {
+    Audio.tickMusic(dt);
+  }
+
+  switch (game.state) {
+    case STATE.MENU: {
+      Audio.setMusic('menu'); // se já estiver, mantém
+      if (pollPressed('arrowdown')||pollPressed('s')) { game.menuSel=(game.menuSel+1)%3; Audio.sfx.select(); }
+      if (pollPressed('arrowup')||pollPressed('w'))   { game.menuSel=(game.menuSel+2)%3; Audio.sfx.select(); }
+      if (pollPressed('enter')||pollPressed(' ')) {
+        Audio.init();
+        Audio.sfx.coin();
+        if (game.menuSel===0) startGame();
+        else if (game.menuSel===1) game.state = STATE.HOW;
+        else game.state = STATE.CREDITS;
+      }
+    } break;
+    case STATE.HOW:
+    case STATE.CREDITS: {
+      if (pollPressed('enter')||pollPressed(' ')||pollPressed('escape')) { game.state = STATE.MENU; Audio.sfx.select(); }
+    } break;
+    case STATE.INTRO: {
+      game.introTimer += dt;
+      if (pollPressed('enter')||pollPressed(' ')) { game.state = STATE.PLAY; game.startTime = performance.now(); }
+    } break;
+    case STATE.PLAY: {
+      game.player.update(dt, game.level, game.bullets);
+      for (const e of game.enemies) e.update(dt, game.level, game.player, game.bullets);
+      for (const p of game.powerups) p.update(dt);
+      // bullets
+      for (const b of game.bullets) {
+        b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt;
+        if (b.friendly) spawnTrail(b.x, b.y+3, '#0ff', 0.2);
+        else spawnTrail(b.x+5, b.y+5, b.color||'#f0f', 0.2);
+      }
+      game.bullets = game.bullets.filter(b => b.life>0 && b.x>cam.x-100 && b.x<cam.x+W+100);
+      // ddos despawn quando saem da tela à esquerda
+      for (const e of game.enemies) {
+        if (e.t==='ddos' && e.x < cam.x - 200) e.alive = false;
+      }
+      // spawn boss
+      if (game.level.bossAt && !game.bossSpawned && game.player.x > game.level.bossAt) {
+        spawnBoss();
+      }
+      // boss fight tick
+      if (game.boss) updateBossFight(dt);
+      // particles
+      for (const p of particles) p.update(dt);
+      for (let i=particles.length-1;i>=0;i--) if (particles[i].life<=0) particles.splice(i,1);
+
+      updateCamera(game.player, game.level);
+      checkCollisions();
+      if (game.player.lives <= 0) endGame(false);
+    } break;
+    case STATE.QUIZ: {
+      game.quiz.update(dt);
+      // continua atualizando partículas no fundo
+      for (const p of particles) p.update(dt);
+      for (let i=particles.length-1;i>=0;i--) if (particles[i].life<=0) particles.splice(i,1);
+    } break;
+    case STATE.TRANS: {
+      game.transTimer += dt;
+      if (game.transTimer > 1.6 && (pollPressed('enter')||pollPressed(' '))) {
+        game.levelNum++;
+        loadLevel(game.levelNum);
+        game.state = STATE.PLAY;
+      }
+    } break;
+    case STATE.GAMEOVER: {
+      if (pollPressed('enter')||pollPressed(' ')) { game.state = STATE.MENU; }
+    } break;
+    case STATE.WIN: {
+      if (pollPressed('enter')||pollPressed(' ')) { game.state = STATE.MENU; }
+    } break;
+  }
+}
+
+function render(dt) {
+  // limpa
+  CTX.fillStyle = '#000'; CTX.fillRect(0,0,W,H);
+
+  // shake offset
+  const sx = (Math.random()*2-1) * shake;
+  const sy = (Math.random()*2-1) * shake;
+  CTX.save();
+  CTX.translate(sx, sy);
+
+  switch (game.state) {
+    case STATE.MENU: drawMenu(game.time); break;
+    case STATE.HOW: drawHow(); break;
+    case STATE.CREDITS: drawCredits(); break;
+    case STATE.INTRO: drawIntro(game.time); break;
+    case STATE.PLAY:
+    case STATE.QUIZ: {
+      drawBackground(game.level.theme, game.time);
+      drawGround(game.level, game.level.theme);
+      drawPlatforms(game.level, game.level.theme);
+      drawGoal(game.level, game.time);
+      for (const p of game.powerups) p.draw(cam);
+      for (const e of game.enemies) e.draw(cam);
+      // bullets
+      for (const b of game.bullets) {
+        if (b.friendly) {
+          CTX.fillStyle = '#0ff';
+          CTX.fillRect(b.x-cam.x, b.y, b.w, b.h);
+          CTX.fillStyle = '#fff';
+          CTX.fillRect(b.x-cam.x+2, b.y+1, b.w-4, b.h-2);
+        } else {
+          CTX.fillStyle = b.color || '#f0f';
+          CTX.fillRect(b.x-cam.x, b.y, b.w, b.h);
+          CTX.fillStyle = '#fff';
+          CTX.fillRect(b.x-cam.x+3, b.y+3, b.w-6, b.h-6);
+        }
+      }
+      game.player.draw(cam);
+      // partículas
+      for (const p of particles) p.draw(cam);
+      // boss fight UI (atrás do HUD)
+      if (game.boss) drawBossFight();
+      // HUD
+      drawHUD(game.player, game.stats, game.level, game.stats.xp, game.stats.xpMax);
+      if (game.state===STATE.QUIZ) game.quiz.draw();
+      // tutorial inicial
+      if (game.levelNum===1 && game.player.x < 200) {
+        CTX.fillStyle='#000a'; CTX.fillRect(200, 70, 500, 50);
+        CTX.strokeStyle='#0ff'; CTX.strokeRect(200, 70, 500, 50);
+        CTX.fillStyle='#0ff'; CTX.font='12px monospace';
+        CTX.fillText('TUTORIAL: ← → mover  |  ESPAÇO pular  |  X atirar  |  encoste num inimigo para quiz', 215, 102);
+      }
+    } break;
+    case STATE.TRANS: drawTransition(game.time); break;
+    case STATE.GAMEOVER: drawGameOver(game.time); break;
+    case STATE.WIN: drawWin(game.time); break;
+  }
+  CTX.restore();
+
+  // overlay scanlines leves
+  CTX.globalAlpha = 0.06;
+  CTX.fillStyle = '#000';
+  for (let y=0;y<H;y+=2) CTX.fillRect(0,y,W,1);
+  CTX.globalAlpha = 1;
+
+  // indicador de mudo
+  if (Audio.isMuted()) {
+    CTX.fillStyle = '#f44'; CTX.font='bold 11px monospace';
+    CTX.fillText('🔇 MUDO (M)', W-90, H-10);
+  }
+}
+
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

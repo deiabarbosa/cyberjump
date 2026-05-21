@@ -1,0 +1,29 @@
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs e temporários
+*.log
+*.tmp
+*.bak
+node_modules/
+
+# Builds (não usamos, mas por garantia)
+dist/
+build/
+.cache/
+
+# Variáveis sensíveis
+.env
+.env.local
+*.pem
+*.key
