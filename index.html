@@ -73,6 +73,62 @@
   @media (pointer: coarse) and (orientation: portrait) {
     #orient { display: flex; }
   }
+  /* ===== Modal de compartilhamento ===== */
+  #share-overlay {
+    position: fixed; inset: 0; z-index: 30;
+    background: radial-gradient(circle at 50% 50%, #08001a 0%, #000 100%);
+    display: none; align-items: center; justify-content: center;
+    padding: 16px; overflow-y: auto;
+  }
+  #share-overlay.show { display: flex; }
+  .share-card {
+    background: linear-gradient(135deg, #0a0a20, #08001a);
+    border: 2px solid #0ff; border-radius: 12px;
+    padding: 22px; max-width: 720px; width: 100%;
+    box-shadow: 0 0 60px #0ff5, 0 0 120px #f0f3;
+  }
+  .share-card h2 {
+    color: #0ff; margin: 0 0 4px; font: bold 22px monospace;
+    text-align: center; letter-spacing: 1px;
+    text-shadow: 0 0 12px #0ff8;
+  }
+  .share-card .sub {
+    color: #0f5; text-align: center; font: 12px monospace; margin-bottom: 14px;
+  }
+  #share-preview {
+    width: 100%; height: auto; max-width: 100%; display: block;
+    border: 2px solid #0ff8; border-radius: 6px; margin-bottom: 14px;
+    image-rendering: pixelated; background: #000;
+  }
+  .share-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .share-row label { color: #0ff; font: bold 11px monospace; min-width: 130px; }
+  #player-name {
+    flex: 1; padding: 10px 12px; background: #000;
+    color: #fff; border: 2px solid #0ff8; border-radius: 4px;
+    font: 14px monospace; outline: none;
+  }
+  #player-name:focus { border-color: #0ff; box-shadow: 0 0 10px #0ff8; }
+  .share-btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+  .share-btns button, #btn-share-close {
+    flex: 1; min-width: 140px;
+    padding: 12px 16px; background: #0a3050; color: #0ff;
+    border: 2px solid #0ff; border-radius: 6px;
+    font: bold 13px monospace; cursor: pointer; letter-spacing: 1px;
+    transition: transform .12s, box-shadow .12s, background .12s;
+  }
+  .share-btns button:hover { background: #0ff; color: #000; box-shadow: 0 0 16px #0ff; transform: translateY(-1px); }
+  #btn-linkedin { background: #0a66c2 !important; color: #fff !important; border-color: #0a66c2 !important; }
+  #btn-linkedin:hover { background: #084e96 !important; box-shadow: 0 0 16px #0a66c2 !important; }
+  #btn-download { background: #0a3050; }
+  #btn-share-native { background: #5a1a7a; border-color: #a0f; color: #f0f; }
+  #btn-share-native:hover { background: #a0f; color: #000; box-shadow: 0 0 16px #a0f; }
+  #btn-share-close {
+    margin-top: 12px; background: transparent; color: #0ff8; border-color: #0ff4;
+    flex: 0; width: 100%;
+  }
+  #btn-share-close:hover { background: #0ff2; color: #fff; }
+  /* Esconde o native share em desktop (Web Share API só roda bem em mobile) */
+  @media (hover: hover) and (pointer: fine) { #btn-share-native { display: none; } }
 </style>
 </head>
 <body>
@@ -90,6 +146,23 @@
   </div>
 </div>
 <div id="orient">📱➜📱<br><br>ROTACIONE O CELULAR<br>PARA MODO PAISAGEM</div>
+<div id="share-overlay">
+  <div class="share-card">
+    <h2>🏆 COMPARTILHE SEU RESULTADO</h2>
+    <div class="sub">Mostre seu desempenho de cibersegurança no LinkedIn</div>
+    <canvas id="share-preview" width="800" height="420"></canvas>
+    <div class="share-row">
+      <label for="player-name">SEU NOME:</label>
+      <input id="player-name" type="text" maxlength="32" placeholder="Pentester Anônimo" autocomplete="name">
+    </div>
+    <div class="share-btns">
+      <button id="btn-download">💾 BAIXAR PNG</button>
+      <button id="btn-linkedin">💼 ABRIR LINKEDIN</button>
+      <button id="btn-share-native">📲 COMPARTILHAR</button>
+    </div>
+    <button id="btn-share-close">← VOLTAR AO MENU</button>
+  </div>
+</div>
 <script>
 "use strict";
 
@@ -232,8 +305,26 @@ function handleCanvasTap(p) {
       break;
     }
     case 'how': case 'credits': case 'intro':
-    case 'trans': case 'over': case 'win':
+    case 'trans':
       PRESSED['enter'] = true; break;
+    case 'over': case 'win': {
+      // Tap nos botões da tela final
+      const btns = game._endButtons;
+      if (btns) {
+        if (p.x >= btns.share.x && p.x <= btns.share.x+btns.share.w &&
+            p.y >= btns.share.y && p.y <= btns.share.y+btns.share.h) {
+          openShareModal();
+          return;
+        }
+        if (p.x >= btns.menu.x && p.x <= btns.menu.x+btns.menu.w &&
+            p.y >= btns.menu.y && p.y <= btns.menu.y+btns.menu.h) {
+          PRESSED['enter'] = true;
+          return;
+        }
+      }
+      PRESSED['enter'] = true;
+      break;
+    }
   }
 }
 CANVAS.addEventListener('touchstart', e => {
@@ -2028,6 +2119,38 @@ function drawHUD(player, score, level, xp, xpMax) {
   if (player.shieldT>0) { CTX.fillStyle = '#4af'; CTX.fillRect(px,py,18,18); CTX.fillStyle='#000'; CTX.font='bold 12px monospace'; CTX.fillText('S', px+5, py+14); px+=22; }
   if (player.tokenT>0)  { CTX.fillStyle = '#fc0'; CTX.fillRect(px,py,18,18); CTX.fillStyle='#000'; CTX.fillText('K', px+5, py+14); px+=22; }
   if (player.cloakT>0)  { CTX.fillStyle = '#a0f'; CTX.fillRect(px,py,18,18); CTX.fillStyle='#fff'; CTX.fillText('C', px+5, py+14); px+=22; }
+
+  // STREAK badge — só mostra com 2+ acertos seguidos
+  if (score.streak && score.streak >= 2) {
+    const txt = '🔥 STREAK x' + score.streak;
+    CTX.font = 'bold 14px monospace';
+    const w = CTX.measureText(txt).width + 16;
+    const pulse = score.streak >= 5 ? (0.7 + 0.3*Math.sin(performance.now()/100)) : 1;
+    CTX.globalAlpha = pulse;
+    CTX.fillStyle = score.streak >= 10 ? '#f0f' : score.streak >= 5 ? '#fc0' : '#f80';
+    CTX.fillRect(W - 250, 44, w, 22);
+    CTX.fillStyle = '#000';
+    CTX.fillText(txt, W - 250 + 8, 60);
+    CTX.globalAlpha = 1;
+  }
+
+  // Toast de marco de streak (3x, 5x, 10x, 15x)
+  if (game.streakToast && game.streakToast.t > 0) {
+    const tt = game.streakToast.t;
+    const alpha = Math.min(1, tt) * (tt > 1.5 ? (2-tt)*2 : 1);
+    CTX.globalAlpha = alpha;
+    CTX.font = 'bold 28px monospace';
+    CTX.textAlign='center';
+    const yo = (2 - tt) * 12;
+    CTX.fillStyle = '#000a';
+    CTX.fillRect(W/2-220, 120-yo, 440, 50);
+    CTX.strokeStyle = '#fc0'; CTX.lineWidth = 3;
+    CTX.strokeRect(W/2-220, 120-yo, 440, 50);
+    CTX.fillStyle = '#fc0';
+    CTX.fillText(game.streakToast.text, W/2, 152-yo);
+    CTX.textAlign='left';
+    CTX.globalAlpha = 1;
+  }
 }
 
 /* ----- QUIZ --------------------------------------------------------------- */
@@ -2342,7 +2465,7 @@ const game = {
   time: 0,
   totalTime: 0,
   startTime: 0,
-  stats: { patches:0, correct:0, wrong:0, defeated:0, xp:0, xpMax:30 },
+  stats: { patches:0, correct:0, wrong:0, defeated:0, xp:0, xpMax:30, streak:0, bestStreak:0 },
   highscore: parseInt(localStorage.getItem('cyberjump_hs')||'0',10),
   transTimer: 0,
   introTimer: 0,
@@ -2635,64 +2758,136 @@ function drawTransition(t) {
   CTX.textAlign='left';
 }
 
+// Renderiza um card do ranking com stats no centro da tela
+function drawEndCard(t, isWin) {
+  const rank = getRank();
+  CTX.textAlign = 'center';
+
+  // Título
+  CTX.fillStyle = isWin ? '#0f5' : '#f44';
+  CTX.font = 'bold 36px monospace';
+  CTX.fillText(isWin ? '✓ MISSÃO CUMPRIDA' : '✗ SYSTEM COMPROMISED', W/2 + (isWin?0:((Math.random()*4-2)|0)), 60);
+  CTX.fillStyle = '#0ff';
+  CTX.font = '14px monospace';
+  CTX.fillText(isWin ? 'Lord Ransomware foi neutralizado. O mundo está seguro... por ora.'
+                     : 'Lord Ransomware criptografou seus dados. Continue treinando!', W/2, 88);
+
+  // Card do rank
+  const cx = W/2, cy = 150, cw = 600, ch = 110;
+  CTX.fillStyle = rank.bg;
+  CTX.fillRect(cx-cw/2, cy, cw, ch);
+  CTX.strokeStyle = rank.color; CTX.lineWidth = 3;
+  CTX.strokeRect(cx-cw/2, cy, cw, ch);
+  // Glow pulsante
+  CTX.save();
+  CTX.globalAlpha = 0.3 + 0.3*Math.sin(t*4);
+  CTX.fillStyle = rank.color;
+  CTX.fillRect(cx-cw/2-4, cy-4, cw+8, 4);
+  CTX.fillRect(cx-cw/2-4, cy+ch, cw+8, 4);
+  CTX.restore();
+  // Emoji
+  CTX.font = '52px sans-serif';
+  CTX.textAlign = 'left';
+  CTX.fillText(rank.emoji, cx-cw/2+20, cy+ch-30);
+  // Título do rank
+  CTX.fillStyle = rank.color;
+  CTX.font = 'bold 26px monospace';
+  CTX.fillText(rank.title, cx-cw/2+100, cy+44);
+  // Subtítulo
+  CTX.fillStyle = '#ccc';
+  CTX.font = '13px monospace';
+  CTX.fillText(rank.sub, cx-cw/2+100, cy+68);
+  // Precisão
+  CTX.fillStyle = '#fff';
+  CTX.font = 'bold 14px monospace';
+  CTX.fillText('Precisão: ' + fmtPct(), cx-cw/2+100, cy+92);
+
+  // Stats grid
+  CTX.textAlign='center';
+  const sx = 100, sy = 290, sw = 320, sh = 56, sgap = 16;
+  const stats = [
+    { l:'PONTUAÇÃO',     v: String(finalScore()),                           col:'#fc0' },
+    { l:'ACERTOS',       v: game.stats.correct + ' / ' + (game.stats.correct+game.stats.wrong), col:'#0f5' },
+    { l:'MAIOR STREAK',  v: '🔥 x' + (game.stats.bestStreak||0),            col:'#f44' },
+    { l:'TEMPO',         v: fmtTime(game.totalTime),                        col:'#4af' },
+  ];
+  for (let i=0;i<4;i++) {
+    const col = i%2, row = Math.floor(i/2);
+    const px = sx + col*(sw+sgap), py = sy + row*(sh+10);
+    CTX.fillStyle = '#0a0a18';
+    CTX.fillRect(px, py, sw, sh);
+    CTX.strokeStyle = stats[i].col + 'cc';
+    CTX.lineWidth = 2;
+    CTX.strokeRect(px, py, sw, sh);
+    CTX.fillStyle = stats[i].col;
+    CTX.fillRect(px, py, 4, sh);
+    CTX.fillStyle = '#0ff'; CTX.font = 'bold 11px monospace';
+    CTX.textAlign='left';
+    CTX.fillText(stats[i].l, px+16, py+20);
+    CTX.fillStyle = '#fff'; CTX.font = 'bold 22px monospace';
+    CTX.fillText(stats[i].v, px+16, py+46);
+  }
+  CTX.textAlign='center';
+
+  // Melhor pontuação
+  CTX.fillStyle = '#fc0'; CTX.font = '12px monospace';
+  CTX.fillText('★ Melhor pontuação: ' + game.highscore + ' ★', W/2, 450);
+
+  // CTA Botões
+  const btnY = 478;
+  // Compartilhar (azul LinkedIn)
+  const sBtnW = 280, sBtnX = W/2 - sBtnW - 8;
+  CTX.fillStyle = '#0a66c2';
+  CTX.fillRect(sBtnX, btnY, sBtnW, 36);
+  CTX.strokeStyle = '#fff'; CTX.lineWidth = 2;
+  CTX.strokeRect(sBtnX, btnY, sBtnW, 36);
+  CTX.fillStyle = '#fff'; CTX.font = 'bold 14px monospace';
+  CTX.fillText('💼 COMPARTILHAR NO LINKEDIN  [S]', sBtnX+sBtnW/2, btnY+23);
+
+  // Voltar ao menu
+  const mBtnW = 220, mBtnX = W/2 + 8;
+  CTX.fillStyle = '#1a3050';
+  CTX.fillRect(mBtnX, btnY, mBtnW, 36);
+  CTX.strokeStyle = '#0ff';
+  CTX.strokeRect(mBtnX, btnY, mBtnW, 36);
+  CTX.fillStyle = '#0ff'; CTX.font = 'bold 14px monospace';
+  if (Math.floor(t*2)%2) CTX.fillText('▸ MENU  [ENTER]', mBtnX+mBtnW/2, btnY+23);
+  else CTX.fillText('MENU  [ENTER]', mBtnX+mBtnW/2, btnY+23);
+
+  CTX.textAlign='left';
+  // Guarda coordenadas pra tap mobile
+  game._endButtons = {
+    share: {x: sBtnX, y: btnY, w: sBtnW, h: 36},
+    menu:  {x: mBtnX, y: btnY, w: mBtnW, h: 36},
+  };
+}
+
 function drawGameOver(t) {
   drawBackground('darkweb', t);
-  // glitch
   CTX.fillStyle = '#000c'; CTX.fillRect(0,0,W,H);
+  // Glitch lines
   for (let i=0;i<6;i++) {
-    CTX.globalAlpha = 0.15;
+    CTX.globalAlpha = 0.12;
     CTX.fillStyle = ['#f00','#0ff','#f0f','#ff0','#fff','#0f5'][i%6];
     CTX.fillRect(0, Math.random()*H, W, 3+Math.random()*10);
   }
   CTX.globalAlpha = 1;
-  CTX.textAlign='center';
-  CTX.fillStyle='#f00'; CTX.font='bold 56px monospace';
-  CTX.fillText('SYSTEM COMPROMISED', W/2 + ((Math.random()*6-3)|0), H/2 - 40);
-  CTX.fillStyle='#fff'; CTX.font='18px monospace';
-  CTX.fillText('Lord Ransomware criptografou seus dados.', W/2, H/2 + 10);
-  CTX.fillStyle='#0ff'; CTX.font='14px monospace';
-  CTX.fillText('Patches: ' + game.stats.patches + '  |  Acertos: ' + game.stats.correct + '/' + (game.stats.correct+game.stats.wrong), W/2, H/2 + 50);
-  if (Math.floor(t*2)%2) {
-    CTX.fillStyle='#fc0'; CTX.font='bold 16px monospace';
-    CTX.fillText('[ ENTER para tentar novamente ]', W/2, H/2 + 100);
-  }
-  CTX.textAlign='left';
+  drawEndCard(t, false);
 }
 
 function drawWin(t) {
   drawBackground('matrix', t);
-  CTX.fillStyle = '#000a'; CTX.fillRect(0,0,W,H);
-  CTX.textAlign='center';
-  CTX.fillStyle='#0f5'; CTX.font='bold 36px monospace';
-  CTX.fillText('ACCESS GRANTED', W/2, 80);
-  CTX.fillStyle='#0ff'; CTX.font='bold 20px monospace';
-  CTX.fillText('Lord Ransomware foi neutralizado.', W/2, 120);
-  CTX.fillText('O mundo está seguro... por enquanto.', W/2, 150);
-
-  // créditos rolando
-  CTX.font='14px monospace'; CTX.fillStyle='#fff';
-  const credits = [
-    '== FINAL DA OPERAÇÃO ==',
-    '',
-    'PATCHES COLETADOS: ' + game.stats.patches,
-    'INIMIGOS DERROTADOS: ' + game.stats.defeated,
-    'RESPOSTAS CORRETAS: ' + game.stats.correct,
-    'RESPOSTAS ERRADAS: ' + game.stats.wrong,
-    'TEMPO TOTAL: ' + Math.floor(game.totalTime) + 's',
-    'XP TOTAL: ' + game.stats.xp,
-    'PONTUAÇÃO FINAL: ' + finalScore(),
-    '',
-    '— MELHOR PONTUAÇÃO: ' + game.highscore + ' —',
-    '',
-    'Pentester Pixel agradece a todos',
-    'os hackers éticos que mantêm a internet',
-    'um lugar um pouquinho menos perigoso.',
-    '',
-    '[ ENTER para voltar ao menu ]'
-  ];
-  let y = 200;
-  for (const l of credits) { CTX.fillText(l, W/2, y); y += 22; }
-  CTX.textAlign='left';
+  CTX.fillStyle = '#000c'; CTX.fillRect(0,0,W,H);
+  // Confete neon caindo
+  for (let i=0;i<20;i++) {
+    const x = (i*53 + (t*60)%60) % W;
+    const y = ((t*120 + i*47) % (H+40)) - 20;
+    CTX.fillStyle = ['#0ff','#0f5','#fc0','#f0f','#fff'][i%5];
+    CTX.globalAlpha = 0.6;
+    CTX.fillRect(x|0, y|0, 4, 8);
+  }
+  CTX.globalAlpha = 1;
+  drawEndCard(t, true);
 }
 
 function finalScore() {
@@ -2790,17 +2985,28 @@ function triggerQuiz(enemy, wasStomp=false) {
   game.quiz = new Quiz(q, (result) => {
     if (result.correct) {
       game.stats.correct++;
+      // === STREAK / COMBO ===
+      game.stats.streak = (game.stats.streak || 0) + 1;
+      if (game.stats.streak > (game.stats.bestStreak || 0)) game.stats.bestStreak = game.stats.streak;
+      // Multiplicador cresce com streak (cap em 5x)
+      const mult = Math.min(5, 1 + Math.floor(game.stats.streak / 3));
       enemy.hit(99);
       game.stats.defeated++;
-      game.stats.xp += (enemy.t==='boss'?300:enemy.t==='dragon'?80:25);
-      // bônus de patches por acerto
-      game.stats.patches += (enemy.t==='boss'?20:enemy.t==='dragon'?5:2);
+      game.stats.xp += (enemy.t==='boss'?300:enemy.t==='dragon'?80:25) * mult;
+      game.stats.patches += (enemy.t==='boss'?20:enemy.t==='dragon'?5:2) * mult;
       addShake(3);
+      // Marcos visuais do streak
+      if (game.stats.streak === 3 || game.stats.streak === 5 || game.stats.streak === 10 || game.stats.streak === 15) {
+        game.streakToast = { text: '🔥 STREAK x' + game.stats.streak + '!  (+' + mult + 'x bônus)', t: 2.0 };
+        spawnBurst(game.player.x+12, game.player.y, 30, ['#fc0','#f44','#f0f','#0ff'][Math.min(3, Math.floor(game.stats.streak/3))], 250, 0.7, 3);
+        Audio.sfx.power();
+      }
       // Se foi pisada, dá bounce estilo Mario; senão, breve invuln pra player não recolidir
       if (wasStomp) game.player.vy = -380;
       else game.player.invuln = 0.4;
     } else {
       game.stats.wrong++;
+      game.stats.streak = 0; // erro zera o combo
       const dead = game.player.takeHit();
       if (dead && game.player.lives <= 0) { endGame(false); return; }
       // empurra player pra trás
@@ -3330,6 +3536,285 @@ function endGame(win) {
     localStorage.setItem('cyberjump_hs', String(score));
   }
   game.state = win ? STATE.WIN : STATE.GAMEOVER;
+  game.won = win;
+}
+
+/* ===== RANKING baseado em desempenho ===== */
+function getRank() {
+  const total = game.stats.correct + game.stats.wrong;
+  const pct = total === 0 ? 0 : game.stats.correct / total;
+  if (pct >= 0.95 && total >= 5) return { title:'CISO MASTER',                 sub:'Cibersegurança lendária',      emoji:'👑', color:'#fc0', bg:'#3a2a00' };
+  if (pct >= 0.85)               return { title:'Especialista em Segurança',    sub:'Elite da defesa cibernética',  emoji:'💎', color:'#0ff', bg:'#003040' };
+  if (pct >= 0.70)               return { title:'Pentester Sênior',             sub:'Hacker ético experiente',      emoji:'🔱', color:'#0f5', bg:'#00301a' };
+  if (pct >= 0.55)               return { title:'Analista de SOC Pleno',        sub:'Defensor competente',          emoji:'⚔️', color:'#4af', bg:'#001a3a' };
+  if (pct >= 0.35)               return { title:'Analista de SOC Júnior',       sub:'Pegando o ritmo',              emoji:'🛡️', color:'#fa0', bg:'#302000' };
+  return                                { title:'Em Treinamento',              sub:'Continue praticando!',         emoji:'🌱', color:'#f44', bg:'#3a0010' };
+}
+
+/* ===== Formatadores ===== */
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(s));
+  const m = Math.floor(s/60), r = s%60;
+  return m + 'm ' + String(r).padStart(2,'0') + 's';
+}
+function fmtPct() {
+  const t = game.stats.correct + game.stats.wrong;
+  if (t === 0) return '0%';
+  return ((game.stats.correct/t)*100).toFixed(1) + '%';
+}
+
+/* ===== Geração da imagem pra LinkedIn (1200x630) ===== */
+function generateShareImage(playerName) {
+  const C = document.createElement('canvas');
+  C.width = 1200; C.height = 630;
+  const x = C.getContext('2d');
+  const rank = getRank();
+  const win = !!game.won;
+
+  // Fundo gradiente cyberpunk
+  const grad = x.createLinearGradient(0, 0, 1200, 630);
+  grad.addColorStop(0, '#0a0028');
+  grad.addColorStop(0.5, '#080018');
+  grad.addColorStop(1, '#1a0020');
+  x.fillStyle = grad;
+  x.fillRect(0, 0, 1200, 630);
+
+  // Grid neon ao fundo
+  x.strokeStyle = '#0ff2'; x.lineWidth = 1;
+  for (let i = 0; i < 1200; i += 40) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, 630); x.stroke(); }
+  for (let i = 0; i < 630; i += 40) { x.beginPath(); x.moveTo(0, i); x.lineTo(1200, i); x.stroke(); }
+  // Vinheta
+  const vig = x.createRadialGradient(600, 315, 200, 600, 315, 800);
+  vig.addColorStop(0, '#0000'); vig.addColorStop(1, '#000c');
+  x.fillStyle = vig; x.fillRect(0, 0, 1200, 630);
+
+  // === Header faixa ===
+  x.fillStyle = '#0ff';
+  x.fillRect(0, 0, 1200, 6);
+  x.fillRect(0, 624, 1200, 6);
+  // Listras de canto
+  x.fillStyle = '#fc0';
+  for (let i = 0; i < 8; i++) x.fillRect(i*16, 6, 8, 6);
+  for (let i = 0; i < 8; i++) x.fillRect(1200 - 8 - i*16, 618, 8, 6);
+
+  // === LOGO / título ===
+  x.fillStyle = '#f0f8';
+  x.font = 'bold 64px monospace';
+  x.fillText('CYBERJUMP', 64+3, 90+3);
+  x.fillStyle = '#0ff';
+  x.fillText('CYBERJUMP', 64, 90);
+  x.fillStyle = '#0f5';
+  x.font = 'bold 18px monospace';
+  x.fillText('TREINAMENTO GAMIFICADO DE CIBERSEGURANÇA', 64, 116);
+
+  // === Status badge canto sup-direito ===
+  x.fillStyle = win ? '#0f5' : '#f44';
+  x.fillRect(960, 40, 200, 36);
+  x.fillStyle = '#000'; x.font = 'bold 20px monospace';
+  x.textAlign = 'center';
+  x.fillText(win ? '✓ MISSÃO CUMPRIDA' : '✗ COMPROMETIDO', 1060, 65);
+  x.textAlign = 'left';
+
+  // === Card do RANK ===
+  const rx = 64, ry = 160, rw = 1072, rh = 130;
+  x.fillStyle = rank.bg;
+  x.fillRect(rx, ry, rw, rh);
+  x.strokeStyle = rank.color; x.lineWidth = 4;
+  x.strokeRect(rx, ry, rw, rh);
+  // Emoji gigante à esquerda
+  x.font = '90px sans-serif';
+  x.fillText(rank.emoji, rx+24, ry+rh-22);
+  // Título do cargo
+  x.fillStyle = rank.color;
+  x.font = 'bold 38px monospace';
+  x.fillText(rank.title, rx+140, ry+50);
+  // Subtítulo
+  x.fillStyle = '#cce';
+  x.font = '18px monospace';
+  x.fillText(rank.sub, rx+140, ry+78);
+  // Player name
+  x.fillStyle = '#fff';
+  x.font = 'bold 22px monospace';
+  const np = (playerName || 'Pentester Anônimo').slice(0, 32);
+  x.fillText('— ' + np, rx+140, ry+108);
+
+  // === STATS grid ===
+  const stats = [
+    { label:'PONTUAÇÃO',     value: String(finalScore()),                                         color:'#fc0', icon:'★' },
+    { label:'ACERTOS',       value: game.stats.correct + ' / ' + (game.stats.correct+game.stats.wrong) + '  (' + fmtPct() + ')', color:'#0f5', icon:'✓' },
+    { label:'MAIOR STREAK',  value: '🔥 x' + (game.stats.bestStreak||0),                          color:'#f44', icon:'🔥' },
+    { label:'TEMPO TOTAL',   value: fmtTime(game.totalTime),                                      color:'#4af', icon:'⏱' },
+    { label:'INIMIGOS NEUTRALIZADOS', value: String(game.stats.defeated),                         color:'#0ff', icon:'⚔' },
+    { label:'PATCHES COLETADOS',      value: String(game.stats.patches),                          color:'#0f8', icon:'⚙' },
+  ];
+  const sx = 64, sy = 312, sw = 510, sh = 70, sgap = 12;
+  for (let i = 0; i < stats.length; i++) {
+    const col = i % 2, row = Math.floor(i / 2);
+    const px = sx + col * (sw + sgap), py = sy + row * (sh + sgap);
+    // box
+    x.fillStyle = '#0a0a20';
+    x.fillRect(px, py, sw, sh);
+    x.strokeStyle = stats[i].color + 'cc';
+    x.lineWidth = 2;
+    x.strokeRect(px, py, sw, sh);
+    // barra lateral
+    x.fillStyle = stats[i].color;
+    x.fillRect(px, py, 6, sh);
+    // label
+    x.fillStyle = '#0ff'; x.font = 'bold 13px monospace';
+    x.fillText(stats[i].label, px+24, py+24);
+    // value
+    x.fillStyle = '#fff'; x.font = 'bold 26px monospace';
+    x.fillText(stats[i].value, px+24, py+54);
+  }
+
+  // === Pixel art do Pentester (canto inferior direito) ===
+  x.save();
+  x.translate(1010, 480);
+  x.scale(4, 4);
+  // capuz
+  x.fillStyle='#080018'; x.fillRect(6,0,12,2); x.fillRect(4,2,16,2); x.fillRect(2,4,20,3); x.fillRect(0,7,24,6);
+  x.fillRect(0,12,4,8); x.fillRect(20,12,4,8);
+  x.fillStyle='#0ff'; x.fillRect(6,0,12,1); x.fillRect(2,4,1,3); x.fillRect(21,4,1,3);
+  // face
+  x.fillStyle='#000005'; x.fillRect(5,5,14,9);
+  x.fillStyle='#0a2a3a'; x.fillRect(5,8,14,3);
+  x.fillStyle='#0ff'; x.fillRect(9,9,2,1); x.fillRect(15,9,2,1);
+  x.fillStyle='#0f5'; x.fillRect(9,12,6,1);
+  // hoodie
+  x.fillStyle='#4a1080'; x.fillRect(2,14,20,12);
+  x.fillStyle='#6020a8'; x.fillRect(2,14,20,2);
+  x.fillStyle='#0ff'; x.fillRect(11,16,2,9);
+  x.fillStyle='#0f5'; x.font='bold 5px monospace'; x.fillText('01',4,22); x.fillText('10',16,22);
+  x.fillStyle='#3a0a60'; x.fillRect(0,15,3,8); x.fillRect(21,15,3,8);
+  x.fillStyle='#0ff'; x.fillRect(0,22,3,3); x.fillRect(21,22,3,3);
+  x.fillStyle='#000'; x.fillRect(2,26,20,2);
+  x.fillStyle='#fc0'; x.fillRect(11,26,2,2);
+  x.fillStyle='#0a0a20'; x.fillRect(5,28,5,4); x.fillRect(14,28,5,4);
+  x.fillStyle='#0a2a2a'; x.fillRect(4,31,7,3); x.fillRect(13,31,7,3);
+  x.fillStyle='#0ff'; x.fillRect(4,33,7,1); x.fillRect(13,33,7,1);
+  x.restore();
+
+  // === Hashtags / footer ===
+  x.fillStyle = '#0ff';
+  x.font = 'bold 16px monospace';
+  x.fillText('#Cibersegurança #SegInfo #InfoSec #Pentest #HackerÉtico', 64, 575);
+  // URL
+  x.fillStyle = '#fc0';
+  x.font = 'bold 18px monospace';
+  x.textAlign = 'right';
+  x.fillText('▸ jogue: deiabarbosa.github.io/cyberjump', 1136, 575);
+  x.textAlign = 'left';
+
+  // === Selo do nível Lord Ransomware (se venceu o boss) ===
+  if (win) {
+    x.save();
+    x.translate(1080, 340);
+    x.rotate(-0.15);
+    x.fillStyle = '#fc0';
+    x.beginPath();
+    for (let i = 0; i < 12; i++) {
+      const a = i / 12 * Math.PI * 2;
+      const r = i % 2 === 0 ? 50 : 40;
+      x.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    x.closePath(); x.fill();
+    x.fillStyle = '#000';
+    x.font = 'bold 11px monospace';
+    x.textAlign = 'center';
+    x.fillText('BOSS', 0, -10);
+    x.fillText('DEFEATED', 0, 4);
+    x.fillStyle = '#a00'; x.font = 'bold 8px monospace';
+    x.fillText('★ ★ ★', 0, 18);
+    x.restore();
+    x.textAlign = 'left';
+  }
+
+  return C;
+}
+
+/* ===== Mostra a UI de compartilhamento (HTML overlay) ===== */
+function openShareModal() {
+  const overlay = document.getElementById('share-overlay');
+  if (!overlay) return;
+  const nameInput = document.getElementById('player-name');
+  const stored = localStorage.getItem('cyberjump_name') || '';
+  nameInput.value = stored;
+  refreshSharePreview();
+  overlay.classList.add('show');
+}
+function closeShareModal() {
+  const overlay = document.getElementById('share-overlay');
+  if (overlay) overlay.classList.remove('show');
+}
+function refreshSharePreview() {
+  const nameInput = document.getElementById('player-name');
+  const preview = document.getElementById('share-preview');
+  if (!preview) return;
+  const name = nameInput ? nameInput.value : '';
+  const img = generateShareImage(name);
+  const pctx = preview.getContext('2d');
+  pctx.imageSmoothingEnabled = true;
+  pctx.drawImage(img, 0, 0, preview.width, preview.height);
+  preview._fullImage = img;
+}
+function downloadShareImage() {
+  const preview = document.getElementById('share-preview');
+  if (!preview || !preview._fullImage) return;
+  preview._fullImage.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeName = (document.getElementById('player-name').value || 'cyberjump').replace(/[^a-z0-9]/gi, '_');
+    a.href = url; a.download = 'cyberjump-' + safeName + '.png';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+function shareOnLinkedIn() {
+  const name = document.getElementById('player-name').value;
+  if (name) localStorage.setItem('cyberjump_name', name);
+  // Primeiro baixa a imagem, depois abre o compose do LinkedIn
+  downloadShareImage();
+  setTimeout(() => {
+    const url = encodeURIComponent('https://deiabarbosa.github.io/cyberjump/');
+    window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + url, '_blank');
+  }, 600);
+}
+function shareGeneric() {
+  // Web Share API (mobile) — fallback pra download
+  const preview = document.getElementById('share-preview');
+  if (!preview || !preview._fullImage) return;
+  if (navigator.share && navigator.canShare) {
+    preview._fullImage.toBlob(async (blob) => {
+      const file = new File([blob], 'cyberjump-resultado.png', { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'Meu resultado no CyberJump',
+            text: 'Acabei de jogar CyberJump — treinamento gamificado de cibersegurança! 🛡️',
+          });
+        } catch (e) { /* user cancelled */ }
+      } else {
+        downloadShareImage();
+      }
+    });
+  } else {
+    downloadShareImage();
+  }
+}
+// Liga os botões da modal quando o DOM tá pronto
+function bindShareModal() {
+  const nameInput = document.getElementById('player-name');
+  if (nameInput) nameInput.addEventListener('input', refreshSharePreview);
+  const dBtn = document.getElementById('btn-download');
+  if (dBtn) dBtn.addEventListener('click', downloadShareImage);
+  const lBtn = document.getElementById('btn-linkedin');
+  if (lBtn) lBtn.addEventListener('click', shareOnLinkedIn);
+  const sBtn = document.getElementById('btn-share-native');
+  if (sBtn) sBtn.addEventListener('click', shareGeneric);
+  const bBtn = document.getElementById('btn-share-close');
+  if (bBtn) bBtn.addEventListener('click', closeShareModal);
 }
 
 /* ----- MAIN LOOP ---------------------------------------------------------- */
@@ -3347,6 +3832,9 @@ function update(dt) {
   // sincroniza UI de toque + auto-fire dos botões
   syncTouchUI();
   tickHeldRepeats();
+
+  // toast de streak decai
+  if (game.streakToast && game.streakToast.t > 0) game.streakToast.t -= dt;
 
   // mute global
   if (pollPressed('m')) Audio.toggleMute();
@@ -3424,11 +3912,10 @@ function update(dt) {
         game.state = STATE.PLAY;
       }
     } break;
-    case STATE.GAMEOVER: {
-      if (pollPressed('enter')||pollPressed(' ')) { game.state = STATE.MENU; }
-    } break;
+    case STATE.GAMEOVER:
     case STATE.WIN: {
-      if (pollPressed('enter')||pollPressed(' ')) { game.state = STATE.MENU; }
+      if (pollPressed('enter')) { game.state = STATE.MENU; }
+      if (pollPressed('s')) { openShareModal(); }
     } break;
   }
 }
@@ -3505,6 +3992,7 @@ function render(dt) {
   }
 }
 
+bindShareModal();
 requestAnimationFrame(loop);
 
 </script>
