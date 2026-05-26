@@ -208,12 +208,25 @@ function handleCanvasTap(p) {
     case 'quiz': {
       if (!game.quiz) return;
       if (game.quiz.locked) return; // tap ignorado enquanto mostra resultado
-      const bw = 700, bh = 360;
-      const bx = (W-bw)/2, by = (H-bh)/2 - 10;
+      // Coordenadas batem com a nova janela 840x500 e layout das alternativas
+      const bw = 840, bh = 500;
+      const bx = (W-bw)/2|0, by = (H-bh)/2|0;
+      const headerH = 46;
+      // qY (final do texto da pergunta) — aproximamos via Quiz: usa o mesmo wrap
+      CTX.font = '14px monospace';
+      const qLines = wrapTextLines(game.quiz.q.q, bw-48);
+      const qLineCount = Math.min(qLines.length, 5);
+      const scenY = by+headerH+48;
+      const qY = scenY + 22 + qLineCount*19;
+      const altLabelY = qY + 6;
+      const altStartY = altLabelY + 10;
+      const altH = 42, altGap = 6;
       for (let i=0;i<4;i++) {
-        const ay = by + 150 + i*40;
-        if (p.x >= bx+16 && p.x <= bx+bw-16 && p.y >= ay && p.y <= ay+32) {
-          game.quiz.selected = i; PRESSED['enter'] = true; return;
+        const ay = altStartY + i*(altH+altGap);
+        if (p.x >= bx+24 && p.x <= bx+bw-24 && p.y >= ay && p.y <= ay+altH) {
+          game.quiz.selected = i;
+          PRESSED['enter'] = true;
+          return;
         }
       }
       break;
@@ -2018,10 +2031,11 @@ function drawHUD(player, score, level, xp, xpMax) {
 }
 
 /* ----- QUIZ --------------------------------------------------------------- */
+const QUIZ_TIME = 20; // tempo aumentado pra dar margem na leitura
 class Quiz {
   constructor(question, onResult) {
     this.q = question;
-    this.timeLeft = 10;
+    this.timeLeft = QUIZ_TIME;
     this.onResult = onResult;
     this.selected = 0;
     this.locked = false;
@@ -2038,7 +2052,7 @@ class Quiz {
     }
     this.timeLeft -= dt;
     if (this.timeLeft <= 0) { this.lock(false, true); return; }
-    if (pollPressed('arrowup')||pollPressed('w')) { this.selected = (this.selected+3)%4; Audio.sfx.select(); }
+    if (pollPressed('arrowup')||pollPressed('w'))   { this.selected = (this.selected+3)%4; Audio.sfx.select(); }
     if (pollPressed('arrowdown')||pollPressed('s')) { this.selected = (this.selected+1)%4; Audio.sfx.select(); }
     if (pollPressed('1')) { this.selected = 0; this.confirm(); }
     if (pollPressed('2')) { this.selected = 1; this.confirm(); }
@@ -2050,89 +2064,262 @@ class Quiz {
   lock(correct, timeout) {
     this.locked = true;
     this.result = { correct, timeout, q: this.q };
-    this.resultTimer = correct ? 1.5 : 3.2;
+    // Mais tempo de leitura: o erro precisa ensinar
+    this.resultTimer = correct ? 2.2 : 5.5;
     if (correct) Audio.sfx.correct(); else Audio.sfx.wrong();
   }
+  // Detecta a "categoria" da pergunta (prefixo do cenário) pra mostrar badge
+  category() {
+    const q = this.q.q;
+    if (/E-MAIL|EMAIL|e-?mail/i.test(q)) return { txt:'E-MAIL', col:'#48f' };
+    if (/SPEAR PHISHING|PHISHING/i.test(q)) return { txt:'PHISHING', col:'#f48' };
+    if (/WhatsApp|SMS|Mensagem/i.test(q)) return { txt:'MENSAGEM', col:'#0f8' };
+    if (/Ligação|Pop-up|TAILGATING/i.test(q)) return { txt:'GOLPE PRESENCIAL', col:'#f80' };
+    if (/Wi-?Fi|USB|pen drive|navegador|carregador/i.test(q)) return { txt:'DISPOSITIVO', col:'#fc0' };
+    if (/Instagram|perfil|rede social|público|filhos|quiz viral/i.test(q)) return { txt:'REDES SOCIAIS', col:'#a0f' };
+    if (/PIX|comprar|site|QR|ingresso|empréstimo|hotel|cartão/i.test(q)) return { txt:'GOLPE FINANCEIRO', col:'#f44' };
+    if (/senha|2FA|autenticação|navegador.*senha|pergunta de segurança/i.test(q)) return { txt:'AUTENTICAÇÃO', col:'#0ff' };
+    return { txt:'CIBERSEGURANÇA', col:'#0ff' };
+  }
   draw() {
-    // fundo escuro com glitch leve
+    // ===== Overlay escuro com vinheta =====
     CTX.fillStyle = '#000d';
     CTX.fillRect(0,0,W,H);
-    // janela quiz
-    const bw = 700, bh = 360;
-    const bx = (W-bw)/2, by = (H-bh)/2 - 10;
+    // vinheta radial leve
+    const g = CTX.createRadialGradient(W/2, H/2, 100, W/2, H/2, W);
+    g.addColorStop(0, '#0000');
+    g.addColorStop(1, '#000a');
+    CTX.fillStyle = g;
+    CTX.fillRect(0,0,W,H);
+
+    // ===== Janela maior pra caber tudo =====
+    const bw = 840, bh = 500;
+    const bx = (W-bw)/2|0, by = (H-bh)/2|0;
     const ease = 1 - Math.pow(1-this.appear, 3);
     CTX.save();
     CTX.translate(W/2, H/2);
     CTX.scale(ease, ease);
     CTX.translate(-W/2, -H/2);
 
-    // moldura
-    CTX.fillStyle = '#0a0a18'; CTX.fillRect(bx, by, bw, bh);
-    CTX.strokeStyle = '#0ff'; CTX.lineWidth = 3; CTX.strokeRect(bx, by, bw, bh);
-    CTX.strokeStyle = '#0ff8'; CTX.strokeRect(bx-4, by-4, bw+8, bh+8);
-    // header
-    CTX.fillStyle = '#0ff'; CTX.fillRect(bx, by, bw, 32);
-    CTX.fillStyle = '#000'; CTX.font='bold 16px monospace';
-    CTX.fillText('!! ALERTA DE INTRUSÃO — QUIZ DE SEGURANÇA !!', bx+16, by+22);
-    // timer
-    const tp = clamp(this.timeLeft/10, 0, 1);
-    CTX.fillStyle = '#222';
-    CTX.fillRect(bx+16, by+44, bw-32, 10);
-    CTX.fillStyle = tp>0.4 ? '#0f5' : tp>0.2 ? '#fc0' : '#f33';
-    CTX.fillRect(bx+16, by+44, (bw-32)*tp, 10);
-    CTX.fillStyle = '#fff'; CTX.font = 'bold 12px monospace';
-    CTX.fillText('TEMPO: ' + Math.max(0,this.timeLeft).toFixed(1) + 's', bx+bw-110, by+82);
-    // pergunta (quebra de linha)
-    CTX.fillStyle = '#0ff'; CTX.font = 'bold 16px monospace';
-    wrapText(this.q.q, bx+16, by+80, bw-32, 20);
-    // alternativas
+    // glow externo
+    CTX.fillStyle = '#0ff2'; CTX.fillRect(bx-10, by-10, bw+20, bh+20);
+    CTX.fillStyle = '#0ff3'; CTX.fillRect(bx-5, by-5, bw+10, bh+10);
+
+    // ===== Moldura principal =====
+    CTX.fillStyle = '#080818';
+    CTX.fillRect(bx, by, bw, bh);
+    CTX.strokeStyle = '#0ff';
+    CTX.lineWidth = 3;
+    CTX.strokeRect(bx, by, bw, bh);
+
+    // ===== HEADER =====
+    const headerH = 46;
+    CTX.fillStyle = '#0ff';
+    CTX.fillRect(bx, by, bw, headerH);
+    // listras de alerta laterais
+    CTX.fillStyle = '#000';
+    for (let i=0;i<6;i++) CTX.fillRect(bx+i*8, by+headerH-6, 4, 6);
+    for (let i=0;i<6;i++) CTX.fillRect(bx+bw-48+i*8, by+headerH-6, 4, 6);
+    // Título
+    CTX.fillStyle = '#000';
+    CTX.font = 'bold 17px monospace';
+    CTX.textAlign = 'center';
+    CTX.fillText('⚠  ALERTA DE INTRUSÃO  —  TESTE DE CIBERSEGURANÇA  ⚠', W/2, by+28);
+    CTX.textAlign = 'left';
+
+    // ===== Badge da categoria =====
+    const cat = this.category();
+    const badgeW = CTX.measureText(cat.txt).width + 24;
+    CTX.fillStyle = cat.col;
+    CTX.fillRect(bx+24, by+headerH+12, badgeW, 22);
+    CTX.fillStyle = '#000';
+    CTX.font = 'bold 11px monospace';
+    CTX.fillText(cat.txt, bx+36, by+headerH+27);
+
+    // ===== TIMER =====
+    const timerY = by+headerH+12;
+    const tBarX = bx + 32 + badgeW + 16;
+    const tBarW = bx + bw - 100 - tBarX;
+    CTX.fillStyle = '#1a1a2a';
+    CTX.fillRect(tBarX, timerY+4, tBarW, 14);
+    const tp = clamp(this.timeLeft/QUIZ_TIME, 0, 1);
+    CTX.fillStyle = tp>0.5 ? '#0f5' : tp>0.25 ? '#fc0' : '#f33';
+    CTX.fillRect(tBarX, timerY+4, tBarW*tp, 14);
+    CTX.strokeStyle = '#0ff8';
+    CTX.lineWidth = 1;
+    CTX.strokeRect(tBarX, timerY+4, tBarW, 14);
+    // tempo numérico
+    CTX.fillStyle = '#0ff';
+    CTX.font = 'bold 14px monospace';
+    CTX.textAlign = 'right';
+    CTX.fillText(Math.max(0, this.timeLeft).toFixed(1)+'s', bx+bw-20, timerY+18);
+    CTX.textAlign = 'left';
+
+    // ===== SCENARIO =====
+    const scenY = by+headerH+48;
+    CTX.fillStyle = '#0ff';
+    CTX.font = 'bold 11px monospace';
+    CTX.fillText('▸ CENÁRIO', bx+24, scenY);
+
+    // Texto da pergunta — fonte um pouco maior e legível
+    CTX.fillStyle = '#e8f8ff';
     CTX.font = '14px monospace';
-    for (let i=0;i<4;i++) {
-      const ay = by + 150 + i*40;
-      let color = '#142', bgs = '#0f5';
-      if (this.locked) {
-        if (i === this.q.c) { color = '#0c4020'; bgs = '#0f5'; }
-        else if (i === this.selected && !this.result.correct) { color = '#400'; bgs = '#f44'; }
-        else { color = '#111'; bgs = '#444'; }
-      } else if (i === this.selected) { color = '#024050'; bgs = '#0ff'; }
-      else { color = '#111'; bgs = '#0ff8'; }
-      CTX.fillStyle = color; CTX.fillRect(bx+16, ay, bw-32, 32);
-      CTX.strokeStyle = bgs; CTX.lineWidth = 2; CTX.strokeRect(bx+16, ay, bw-32, 32);
-      CTX.fillStyle = bgs; CTX.font = 'bold 14px monospace';
-      CTX.fillText((i+1)+')', bx+24, ay+20);
-      CTX.fillStyle = '#fff'; CTX.font = '14px monospace';
-      wrapText(this.q.a[i], bx+50, ay+20, bw-80, 16, 1);
+    const qLines = wrapTextLines(this.q.q, bw-48, 14);
+    let qY = scenY + 22;
+    const maxQLines = 5;
+    for (let i=0;i<Math.min(qLines.length, maxQLines);i++) {
+      CTX.fillText(qLines[i], bx+24, qY);
+      qY += 19;
     }
-    // resultado
+
+    // ===== ALTERNATIVAS =====
+    const altLabelY = qY + 6;
+    CTX.fillStyle = '#0ff';
+    CTX.font = 'bold 11px monospace';
+    CTX.fillText('▸ O QUE VOCÊ FARIA?', bx+24, altLabelY);
+
+    const altStartY = altLabelY + 10;
+    const altH = 42;
+    const altGap = 6;
+    for (let i=0;i<4;i++) {
+      const ay = altStartY + i*(altH+altGap);
+      let bgCol, brCol, txtCol, badgeCol;
+      if (this.locked) {
+        if (i === this.q.c) {
+          bgCol='#0a3a1c'; brCol='#0f5'; txtCol='#dfd'; badgeCol='#0f5';
+        } else if (i === this.selected && !this.result.correct) {
+          bgCol='#3a0a14'; brCol='#f44'; txtCol='#fbb'; badgeCol='#f44';
+        } else {
+          bgCol='#0a0a14'; brCol='#333'; txtCol='#777'; badgeCol='#444';
+        }
+      } else if (i === this.selected) {
+        bgCol='#053040'; brCol='#0ff'; txtCol='#fff'; badgeCol='#0ff';
+      } else {
+        bgCol='#0a0a14'; brCol='#055'; txtCol='#bdc'; badgeCol='#088';
+      }
+      // box
+      CTX.fillStyle = bgCol;
+      CTX.fillRect(bx+24, ay, bw-48, altH);
+      CTX.strokeStyle = brCol;
+      CTX.lineWidth = 2;
+      CTX.strokeRect(bx+24, ay, bw-48, altH);
+      // badge do número (à esquerda)
+      CTX.fillStyle = badgeCol;
+      CTX.fillRect(bx+24, ay, 38, altH);
+      CTX.fillStyle = '#000';
+      CTX.font = 'bold 18px monospace';
+      CTX.textAlign='center';
+      CTX.fillText((i+1), bx+24+19, ay+27);
+      CTX.textAlign='left';
+      // texto da alternativa — pode quebrar em 2 linhas
+      CTX.fillStyle = txtCol;
+      CTX.font = '13px monospace';
+      const altLines = wrapTextLines(this.q.a[i], bw-48-50-30, 13);
+      const showLines = altLines.slice(0, 2);
+      // centraliza verticalmente
+      const startY = showLines.length === 1 ? ay+27 : ay+18;
+      for (let j=0;j<showLines.length;j++) {
+        CTX.fillText(showLines[j], bx+74, startY + j*14);
+      }
+      // marcação visual ✓/✗ à direita
+      if (this.locked) {
+        if (i === this.q.c) {
+          CTX.fillStyle = '#0f5'; CTX.font = 'bold 22px monospace';
+          CTX.textAlign='right';
+          CTX.fillText('✓', bx+bw-32, ay+30);
+          CTX.textAlign='left';
+        } else if (i === this.selected && !this.result.correct) {
+          CTX.fillStyle = '#f44'; CTX.font = 'bold 22px monospace';
+          CTX.textAlign='right';
+          CTX.fillText('✗', bx+bw-32, ay+30);
+          CTX.textAlign='left';
+        }
+      }
+    }
+
+    // ===== FOOTER (hint ou explicação) =====
+    const footY = altStartY + 4*(altH+altGap) + 6;
+    const footH = bh - (footY - by) - 14;
     if (this.locked) {
-      const ry = by+bh-22;
-      CTX.fillStyle = this.result.correct ? '#0f5' : '#f55';
-      CTX.font='bold 14px monospace';
-      const msg = this.result.correct ? '✓ CORRETO! INIMIGO NEUTRALIZADO.' : (this.result.timeout ? '✗ TEMPO ESGOTADO — VOCÊ FOI ATINGIDO!' : '✗ INCORRETO!');
-      CTX.fillText(msg, bx+16, ry);
-      if (!this.result.correct) {
-        CTX.fillStyle = '#bbb'; CTX.font='11px monospace';
-        wrapText('RESP. CERTA: ' + this.q.a[this.q.c] + ' — ' + this.q.e, bx+16, by+bh-2, bw-32, 14, 1);
+      // Caixa de explicação educativa
+      const okCol = this.result.correct ? '#0f5' : '#f44';
+      const okBg  = this.result.correct ? '#06301a' : '#3a0a14';
+      CTX.fillStyle = okBg;
+      CTX.fillRect(bx+20, footY, bw-40, footH);
+      CTX.strokeStyle = okCol;
+      CTX.lineWidth = 2;
+      CTX.strokeRect(bx+20, footY, bw-40, footH);
+
+      // Linha 1: status
+      CTX.fillStyle = okCol;
+      CTX.font = 'bold 14px monospace';
+      const status = this.result.correct
+        ? '✓ CORRETO — INIMIGO NEUTRALIZADO'
+        : (this.result.timeout ? '✗ TEMPO ESGOTADO — VOCÊ FOI ATINGIDO' : '✗ INCORRETO');
+      CTX.fillText(status, bx+30, footY+18);
+
+      // Linha 2: resposta certa (sempre mostra, reforço pedagógico)
+      CTX.fillStyle = '#0f5';
+      CTX.font = 'bold 11px monospace';
+      CTX.fillText('RESPOSTA CORRETA:', bx+30, footY+36);
+      CTX.fillStyle = '#fff';
+      CTX.font = '11px monospace';
+      const corrLines = wrapTextLines(this.q.a[this.q.c], bw-180, 11);
+      CTX.fillText(corrLines[0] || '', bx+170, footY+36);
+
+      // Linha 3+: explicação educacional
+      CTX.fillStyle = '#0ff';
+      CTX.font = 'bold 11px monospace';
+      CTX.fillText('💡 POR QUÊ:', bx+30, footY+54);
+      CTX.fillStyle = '#ccddee';
+      CTX.font = '11px monospace';
+      const expLines = wrapTextLines(this.q.e, bw-130, 11);
+      const maxExpL = Math.floor((footH - 64) / 13);
+      for (let i=0;i<Math.min(expLines.length, maxExpL);i++) {
+        CTX.fillText(expLines[i], bx+110, footY+54 + i*13);
       }
     } else {
-      CTX.fillStyle = '#888'; CTX.font='11px monospace';
-      CTX.fillText('↑↓ navegar &nbsp;|&nbsp; ENTER confirmar &nbsp;|&nbsp; 1-4 atalho rápido', bx+16, by+bh-12);
+      // Caixa com dicas e princípios
+      CTX.fillStyle = '#0a1a2a';
+      CTX.fillRect(bx+20, footY, bw-40, footH);
+      CTX.strokeStyle = '#055';
+      CTX.lineWidth = 1;
+      CTX.strokeRect(bx+20, footY, bw-40, footH);
+      CTX.fillStyle = '#0ff';
+      CTX.font = 'bold 11px monospace';
+      CTX.fillText('💡 PRINCÍPIO: Pense como reagiria na vida real — sem truques, só boas práticas.', bx+30, footY+18);
+      CTX.fillStyle = '#888';
+      CTX.font = '10px monospace';
+      CTX.fillText('Controles:  ↑↓ ou W/S navegar   ENTER/ESPAÇO confirmar   1-4 atalho rápido   (mobile: toque na opção)', bx+30, footY+36);
     }
+
     CTX.restore();
   }
 }
-function wrapText(text, x, y, maxW, lh, maxLines=10) {
-  const words = text.split(' ');
-  let line = '', ly = y, count=0;
-  for (let i=0;i<words.length;i++) {
-    const test = line + (line?' ':'') + words[i];
+// Retorna linhas após quebrar texto pelo limite — sem desenhar
+function wrapTextLines(text, maxW, _ignored) {
+  if (!text) return [];
+  const words = String(text).split(' ');
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const test = line + (line ? ' ' : '') + w;
     if (CTX.measureText(test).width > maxW && line) {
-      CTX.fillText(line, x, ly);
-      line = words[i]; ly += lh; count++;
-      if (count >= maxLines) return;
-    } else line = test;
+      lines.push(line);
+      line = w;
+    } else {
+      line = test;
+    }
   }
-  if (line) CTX.fillText(line, x, ly);
+  if (line) lines.push(line);
+  return lines;
+}
+// Mantém wrapText (desenha) pra retro-compatibilidade
+function wrapText(text, x, y, maxW, lh, maxLines=10) {
+  const lines = wrapTextLines(text, maxW);
+  for (let i=0;i<Math.min(lines.length, maxLines); i++) {
+    CTX.fillText(lines[i], x, y + i*lh);
+  }
 }
 
 /* ----- GAME STATE MACHINE ------------------------------------------------- */
@@ -2551,21 +2738,12 @@ function checkCollisions() {
     }
   }
 
-  // player vs enemies → quiz (ou dano direto na boss fight)
+  // player vs enemies → quiz SEMPRE (independente de pular em cima ou colidir lateral)
   for (const e of game.enemies) {
     if (!e.alive) continue;
     if (rectsOverlap(game.player.hitbox, e.hitbox)) {
       if (game.player.cloakT > 0) continue; // invisível: passa
       if (game.player.invuln > 0) continue;
-      // ataque por cima (pisada) — abate goomba sem quiz, igual no Mario
-      if (e.t === 'goomba' && game.player.vy > 80 && (game.player.y + game.player.h) - e.y < 18) {
-        e.hit(99);
-        game.player.vy = -340;
-        game.stats.defeated++;
-        game.stats.xp += 15;
-        Audio.sfx.coin();
-        continue;
-      }
       // Durante boss fight: contato direto = dano (sem quiz)
       if (game.boss && (e.t === 'boss' || e.t === 'ddos')) {
         const real = game.player.takeHit();
@@ -2577,8 +2755,12 @@ function checkCollisions() {
         if (real && game.player.lives <= 0) endGame(false);
         return;
       }
-      // dispara quiz (jogo normal)
-      triggerQuiz(e);
+      // Detecta se foi uma "pisada" (cair em cima) — quiz aparece igual, mas bounce ao acertar
+      const wasStomp = game.player.vy > 80 && (game.player.y + game.player.h) - e.y < 22;
+      // Pausa o player no ar enquanto o quiz roda (sensação de "tempo congela")
+      game.player.vy = 0;
+      // Dispara quiz (jogo normal) — sempre, independente de pular em cima ou não
+      triggerQuiz(e, wasStomp);
       return;
     }
   }
@@ -2601,7 +2783,7 @@ function applyPowerup(t) {
   if (game.stats.xp >= game.stats.xpMax) game.stats.xpMax += 40;
 }
 
-function triggerQuiz(enemy) {
+function triggerQuiz(enemy, wasStomp=false) {
   game.pendingEnemy = enemy;
   game.state = STATE.QUIZ;
   const q = nextQuestion();
@@ -2614,6 +2796,9 @@ function triggerQuiz(enemy) {
       // bônus de patches por acerto
       game.stats.patches += (enemy.t==='boss'?20:enemy.t==='dragon'?5:2);
       addShake(3);
+      // Se foi pisada, dá bounce estilo Mario; senão, breve invuln pra player não recolidir
+      if (wasStomp) game.player.vy = -380;
+      else game.player.invuln = 0.4;
     } else {
       game.stats.wrong++;
       const dead = game.player.takeHit();
