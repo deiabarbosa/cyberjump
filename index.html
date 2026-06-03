@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CyberJump: A Saga do Hacker Branco</title>
+<title>CyberJump — Defenda a Internet | Aprenda cibersegurança jogando</title>
 <style>
   html, body {
     margin: 0; padding: 0; height: 100%; background: #050510;
@@ -172,7 +172,7 @@
 "use strict";
 
 /* ============================================================================
-   CYBERJUMP — A SAGA DO HACKER BRANCO
+   CYBERJUMP — DEFENDA A INTERNET
    Single-file HTML5 Canvas platformer com quiz de cibersegurança.
 ============================================================================ */
 
@@ -357,12 +357,28 @@ const Audio = (() => {
     sfxGain = ctx.createGain(); sfxGain.gain.value = 0.30; sfxGain.connect(ctx.destination);
   }
   function noteHz(n) { return 440 * Math.pow(2, (n - 69) / 12); }
-  function beep(freq, dur=0.08, type='square', vol=0.5, attack=0.005) {
+  function beep(freq, dur=0.08, type='square', vol=0.5, attack=0.005, detune=0) {
     if (!ctx || muted) return;
     const o = ctx.createOscillator(); const g = ctx.createGain();
-    o.type = type; o.frequency.value = freq;
+    o.type = type; o.frequency.value = freq; o.detune.value = detune;
     g.gain.setValueAtTime(0, ctx.currentTime);
     g.gain.linearRampToValueAtTime(vol, ctx.currentTime + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    o.connect(g); g.connect(sfxGain);
+    o.start(); o.stop(ctx.currentTime + dur + 0.02);
+  }
+  // Toca acorde — várias notas ao mesmo tempo pra som encorpado
+  function chord(freqs, dur, type='triangle', vol=0.3) {
+    for (const f of freqs) beep(f, dur, type, vol);
+  }
+  // Slide/sweep entre duas freqs (efeito "swoosh")
+  function sweep(from, to, dur=0.2, type='sawtooth', vol=0.3) {
+    if (!ctx || muted) return;
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(from, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(to, ctx.currentTime + dur);
+    g.gain.setValueAtTime(0, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
     o.connect(g); g.connect(sfxGain);
     o.start(); o.stop(ctx.currentTime + dur + 0.02);
@@ -379,19 +395,56 @@ const Audio = (() => {
     src.connect(f); f.connect(g); g.connect(sfxGain);
     src.start();
   }
-  // SFX presets
+  // SFX presets — mais ricos com acordes/sweeps
   const sfx = {
-    jump:   () => beep(660, 0.10, 'square', 0.4),
-    djump:  () => { beep(660,0.06,'square',0.3); setTimeout(()=>beep(990,0.10,'square',0.4),50); },
-    coin:   () => { beep(880,0.05,'square',0.4); setTimeout(()=>beep(1320,0.10,'square',0.4),60); },
-    hit:    () => { noise(0.15, 0.4, 800); beep(150, 0.15, 'sawtooth', 0.4); },
-    correct:() => { beep(523,0.08,'triangle',0.4); setTimeout(()=>beep(659,0.08,'triangle',0.4),90); setTimeout(()=>beep(784,0.18,'triangle',0.4),180); },
-    wrong:  () => { beep(220,0.18,'sawtooth',0.4); setTimeout(()=>beep(170,0.25,'sawtooth',0.4),120); },
-    shoot:  () => beep(1200, 0.05, 'square', 0.25),
-    power:  () => { for (let i=0;i<5;i++) setTimeout(()=>beep(440+i*120,0.07,'square',0.3), i*40); },
-    portal: () => { for (let i=0;i<8;i++) setTimeout(()=>beep(330+i*80,0.10,'triangle',0.3), i*60); },
-    boss:   () => { for (let i=0;i<6;i++) setTimeout(()=>beep(100+i*20,0.20,'sawtooth',0.4), i*100); },
-    select: () => beep(700, 0.04, 'square', 0.3),
+    jump:   () => { sweep(440, 880, 0.12, 'square', 0.35); },
+    djump:  () => { sweep(660, 1320, 0.14, 'square', 0.35); setTimeout(()=>beep(1760,0.06,'triangle',0.3),60); },
+    coin:   () => { chord([880,1320], 0.08, 'square', 0.3); setTimeout(()=>chord([1320,1760], 0.12, 'square', 0.3),80); },
+    hit:    () => { noise(0.15, 0.4, 800); sweep(400, 80, 0.2, 'sawtooth', 0.35); },
+    // CORRETO: acorde maior triunfante (do-mi-sol) + nota agudo no final
+    correct:() => {
+      chord([523, 659, 784], 0.16, 'triangle', 0.28);
+      setTimeout(() => chord([659, 784, 988], 0.18, 'triangle', 0.28), 140);
+      setTimeout(() => chord([784, 988, 1175], 0.30, 'triangle', 0.32), 280);
+    },
+    // ERRADO: sequência descendente em tom menor + sub-bass
+    wrong:  () => {
+      chord([330, 392], 0.20, 'sawtooth', 0.28);
+      setTimeout(() => chord([294, 349], 0.22, 'sawtooth', 0.28), 200);
+      setTimeout(() => chord([220, 262], 0.32, 'sawtooth', 0.30), 420);
+    },
+    shoot:  () => { sweep(1800, 600, 0.07, 'square', 0.22); },
+    // POWER-UP: arpejo em acorde maior + sparkle
+    power:  () => {
+      const notes = [523, 659, 784, 1047, 1319];
+      for (let i = 0; i < notes.length; i++) setTimeout(() => beep(notes[i], 0.10, 'triangle', 0.3), i*45);
+      setTimeout(() => chord([1568, 2093], 0.22, 'triangle', 0.25), 250);
+    },
+    portal: () => {
+      sweep(440, 1760, 0.5, 'sine', 0.3);
+      setTimeout(() => chord([880, 1320, 1760], 0.3, 'triangle', 0.3), 450);
+    },
+    boss:   () => {
+      chord([80, 110], 0.3, 'sawtooth', 0.4);
+      setTimeout(() => chord([70, 100], 0.4, 'sawtooth', 0.4), 280);
+      noise(0.6, 0.15, 200);
+    },
+    select: () => beep(900, 0.04, 'square', 0.22, 0.002, -30),
+    blip:   () => beep(1100, 0.03, 'sine', 0.18),
+    // Toast / notificação amigável
+    toast:  () => { beep(880, 0.06, 'triangle', 0.2); setTimeout(()=>beep(1175,0.10,'triangle',0.22), 60); },
+    // Streak/combo crescente
+    streak: () => {
+      chord([784, 988, 1175], 0.10, 'triangle', 0.3);
+      setTimeout(()=>chord([988, 1175, 1397], 0.10, 'triangle', 0.3), 80);
+      setTimeout(()=>chord([1175, 1397, 1760], 0.18, 'triangle', 0.32), 160);
+    },
+    // BREACH success — explosão sintetizada
+    breach: () => {
+      sweep(220, 1760, 0.3, 'sawtooth', 0.35);
+      noise(0.4, 0.2, 1200);
+      setTimeout(() => chord([1175, 1397, 1760, 2093], 0.4, 'triangle', 0.3), 200);
+    },
   };
   // Music: sequência de notas MIDI por fase
   const tunes = {
@@ -408,6 +461,32 @@ const Audio = (() => {
     musicIdx = 0; musicTimer = 0;
     musicBpm = (name === 'boss') ? 160 : 130;
   }
+  // Pequena percussão sintetizada (kick + hat)
+  function kick() {
+    if (!ctx || muted) return;
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(120, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.08);
+    g.gain.setValueAtTime(0.32, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    o.connect(g); g.connect(musicGain);
+    o.start(); o.stop(ctx.currentTime + 0.2);
+  }
+  function hat() {
+    if (!ctx || muted) return;
+    const dur = 0.04;
+    const bufSize = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random()*2-1) * (1 - i/bufSize);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = 0.07;
+    const f = ctx.createBiquadFilter(); f.type='highpass'; f.frequency.value = 7000;
+    src.connect(f); f.connect(g); g.connect(musicGain);
+    src.start();
+  }
+
   function tickMusic(dt) {
     if (!ctx || muted) return;
     musicTimer -= dt;
@@ -416,23 +495,35 @@ const Audio = (() => {
       musicTimer = beat;
       const n = musicNotes[musicIdx % musicNotes.length];
       const freq = noteHz(n);
+      // Melodia principal — onda square com envelope mais doce
       const o = ctx.createOscillator(); const g = ctx.createGain();
       o.type = 'square'; o.frequency.value = freq;
       g.gain.setValueAtTime(0, ctx.currentTime);
-      g.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.01);
+      g.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.015);
       g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + beat*0.9);
       o.connect(g); g.connect(musicGain);
       o.start(); o.stop(ctx.currentTime + beat);
-      // bass (1 oitava abaixo, a cada 2)
+      // Camada de "harmonia" (sine 1 oitava acima, mais suave)
+      const h = ctx.createOscillator(); const hg = ctx.createGain();
+      h.type = 'sine'; h.frequency.value = freq*2;
+      hg.gain.setValueAtTime(0, ctx.currentTime);
+      hg.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 0.02);
+      hg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + beat*0.7);
+      h.connect(hg); hg.connect(musicGain);
+      h.start(); h.stop(ctx.currentTime + beat);
+      // Bass triangle a cada 2 colcheias
       if (musicIdx % 2 === 0) {
         const b = ctx.createOscillator(); const bg = ctx.createGain();
         b.type = 'triangle'; b.frequency.value = freq/2;
         bg.gain.setValueAtTime(0, ctx.currentTime);
-        bg.gain.linearRampToValueAtTime(0.22, ctx.currentTime + 0.01);
+        bg.gain.linearRampToValueAtTime(0.20, ctx.currentTime + 0.01);
         bg.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + beat*1.6);
         b.connect(bg); bg.connect(musicGain);
         b.start(); b.stop(ctx.currentTime + beat*2);
       }
+      // Percussão — kick nos beats fortes (a cada 4 colcheias), hat nos pares
+      if (musicIdx % 4 === 0) kick();
+      if (musicIdx % 2 === 1) hat();
       musicIdx++;
     }
   }
@@ -483,6 +574,26 @@ function spawnTrail(x,y,color,life=0.3) {
 /* ----- SCREEN SHAKE ------------------------------------------------------- */
 let shake = 0;
 function addShake(v) { shake = Math.min(20, shake + v); }
+
+/* ----- DICAS DE SEGURANÇA ROTATIVAS (mostradas no menu e transições) ------ */
+const SECURITY_TIPS = [
+  { icon:'🔐', tip:'Use senhas únicas em cada site — um gerenciador (Bitwarden, 1Password) facilita.' },
+  { icon:'📱', tip:'Ative 2FA (verificação em duas etapas) em e-mail, banco e redes sociais.' },
+  { icon:'💾', tip:'Backups regulares são sua melhor defesa contra ransomware.' },
+  { icon:'🎣', tip:'Pense duas vezes antes de clicar em qualquer link de e-mail ou SMS.' },
+  { icon:'🔗', tip:'URLs com erros de digitação geralmente são golpes (paypa1.com, nubonk).' },
+  { icon:'📶', tip:'Wi-Fi público + dados sensíveis = nunca. Use 4G ou VPN.' },
+  { icon:'🎁', tip:'Pra RECEBER prêmio você nunca paga nada. Sorteios reais não pedem PIX.' },
+  { icon:'⏰', tip:'Urgência artificial é a marca registrada do golpe ("seja rápido!").' },
+  { icon:'🆘', tip:'Recebeu pedido de PIX urgente? Ligue de volta no número que você já tem salvo.' },
+  { icon:'🛡️', tip:'Sistema desatualizado é vulnerabilidade. Aceite as atualizações automáticas.' },
+  { icon:'🔍', tip:'Antes de comprar online: confira CNPJ na Receita e avaliações no Reclame Aqui.' },
+  { icon:'👀', tip:'Ninguém legítimo pede senha por SMS, WhatsApp ou ligação. Ninguém.' },
+  { icon:'📷', tip:'QR Codes podem ser trocados — desconfie de QR que pede dados do cartão.' },
+  { icon:'🔒', tip:'HTTPS é o mínimo. Site começando com "http://" puro: não envie nada sensível.' },
+  { icon:'🐴', tip:'Anexos .exe ou .scr disfarçados de PDF/Word são malware. Nunca abra.' },
+];
+function randomTip() { return SECURITY_TIPS[Math.floor(Math.random()*SECURITY_TIPS.length)]; }
 
 /* ----- BANCO DE PERGUNTAS (50 cenários reais de cibersegurança) ----------- */
 const QUESTIONS = [
@@ -2551,16 +2662,24 @@ function startGame() {
   game.introTimer = 0;
   game.introI = 0;
   game.introMsgs = [
-    '> ESTABELECENDO CONEXÃO SEGURA...',
-    '> ROTEANDO POR VPN... ',
-    '> CONEXÃO ESTABELECIDA.',
+    '> CARREGANDO MISSÃO DE CIBERSEGURANÇA...',
+    '> ATIVANDO MODO HERÓI(NA) DIGITAL...',
+    '> TUDO PRONTO!',
     '',
-    'Pentester Pixel, sua missão começa agora.',
-    'A internet foi sequestrada por LORD RANSOMWARE.',
-    'Atravesse 3 zonas hostis, derrote os agentes',
-    'maliciosos e libere os dados do mundo.',
+    'Oi, defensor(a)! 👋',
     '',
-    '[ ENTER para iniciar ]'
+    'Os golpes online estão por toda parte: e-mails',
+    'falsos, mensagens estranhas, links suspeitos…',
+    '',
+    'Sua missão: atravessar 3 zonas da internet e',
+    'aprender a reconhecer os golpes mais comuns',
+    'enfrentando os vilões da rede, do Phishing',
+    'até o Lord Ransomware no final.',
+    '',
+    '📚 Errou? Sem stress — cada pergunta vem com',
+    '   explicação completa pra você sair sabendo.',
+    '',
+    '[ ENTER ou TOQUE pra começar ]'
   ];
   loadLevel(1);
 }
@@ -2610,7 +2729,9 @@ function drawMenu(t) {
   CTX.fillText('CyberJump', 3, 3);
   CTX.fillStyle = '#0ff'; CTX.fillText('CyberJump', 0, 0);
   CTX.fillStyle = '#0f5'; CTX.font = 'bold 22px monospace';
-  CTX.fillText('A SAGA DO HACKER BRANCO', 0, 36);
+  CTX.fillText('DEFENDA A INTERNET', 0, 36);
+  CTX.fillStyle = '#0ff8'; CTX.font = '13px monospace';
+  CTX.fillText('aprenda cibersegurança jogando', 0, 58);
   CTX.restore();
   CTX.textAlign = 'left';
 
@@ -2688,8 +2809,24 @@ function drawMenu(t) {
   // press start blink
   if (Math.floor(t*2)%2) {
     CTX.fillStyle='#fff'; CTX.font='12px monospace'; CTX.textAlign='center';
-    CTX.fillText('▼ ENTER para selecionar — ↑↓ para navegar ▼', W/2, H-30);
+    CTX.fillText('▼ ENTER para selecionar — ↑↓ para navegar ▼', W/2, H-58);
   }
+
+  // Dica de segurança rotativa no rodapé (muda a cada 6s)
+  if (!game._menuTip || performance.now() - game._menuTipAt > 6000) {
+    game._menuTip = randomTip();
+    game._menuTipAt = performance.now();
+  }
+  const tip = game._menuTip;
+  CTX.fillStyle = '#000a';
+  CTX.fillRect(40, H-38, W-80, 30);
+  CTX.strokeStyle = '#0f5'; CTX.lineWidth = 1;
+  CTX.strokeRect(40, H-38, W-80, 30);
+  CTX.fillStyle = '#0f5'; CTX.font='bold 11px monospace';
+  CTX.textAlign='left';
+  CTX.fillText('DICA DE SEGURANÇA  ' + tip.icon, 56, H-22);
+  CTX.fillStyle = '#cfc'; CTX.font='11px monospace';
+  CTX.fillText(tip.tip, 220, H-22);
   CTX.textAlign='left';
 
   // highscore
@@ -2743,7 +2880,7 @@ function drawCredits() {
   CTX.fillText('CRÉDITOS', 60, 80);
   CTX.fillStyle = '#fff'; CTX.font='14px monospace';
   const lines = [
-    'CYBERJUMP — A SAGA DO HACKER BRANCO',
+    'CYBERJUMP — DEFENDA A INTERNET',
     '',
     'DESIGN E PROGRAMAÇÃO:',
     '  Andréa Barbosa Araújo',
@@ -2802,23 +2939,67 @@ function drawTransition(t) {
   CTX.fillStyle = '#000c'; CTX.fillRect(0,0,W,H);
   CTX.fillStyle = '#0ff'; CTX.font='bold 30px monospace';
   CTX.textAlign='center';
+
+  // Pega uma dica de segurança aleatória (estável durante a tela)
+  if (!game._transTip) game._transTip = randomTip();
+
   if (game.transTimer < 1.6) {
-    CTX.fillText('LOADING...', W/2, H/2 - 30);
-    CTX.fillStyle='#fc0'; CTX.font='bold 18px monospace';
-    CTX.fillText('DECRYPTING NEXT LEVEL', W/2, H/2 + 10);
-    // barra
+    CTX.fillText('CARREGANDO...', W/2, H/2 - 80);
+    CTX.fillStyle='#fc0'; CTX.font='bold 16px monospace';
+    CTX.fillText('Descriptografando próxima fase', W/2, H/2 - 50);
+    // barra com brilho
     const p = clamp(game.transTimer / 1.6, 0, 1);
-    CTX.strokeStyle='#0ff'; CTX.strokeRect(W/2-160, H/2+40, 320, 16);
-    CTX.fillStyle='#0ff'; CTX.fillRect(W/2-158, H/2+42, 316*p, 12);
-  } else {
-    CTX.fillText('FASE ' + game.levelNum + ' COMPLETA!', W/2, H/2 - 60);
-    CTX.fillStyle='#fff'; CTX.font='15px monospace';
-    CTX.fillText('Patches coletados: ' + game.stats.patches, W/2, H/2 - 10);
-    CTX.fillText('Acertos: ' + game.stats.correct + '  Erros: ' + game.stats.wrong, W/2, H/2 + 14);
-    CTX.fillText('Inimigos derrotados: ' + game.stats.defeated, W/2, H/2 + 38);
-    if (Math.floor(t*2)%2) {
-      CTX.fillStyle='#fc0'; CTX.fillText('[ ENTER para continuar ]', W/2, H/2 + 80);
+    CTX.strokeStyle='#0ff'; CTX.lineWidth = 2;
+    CTX.strokeRect(W/2-180, H/2-20, 360, 18);
+    const grad = CTX.createLinearGradient(W/2-180, 0, W/2+180, 0);
+    grad.addColorStop(0, '#0ff'); grad.addColorStop(1, '#0f5');
+    CTX.fillStyle = grad;
+    CTX.fillRect(W/2-178, H/2-18, 356*p, 14);
+
+    // Dica de segurança no rodapé — entrega valor educativo durante o load
+    const tip = game._transTip;
+    CTX.fillStyle = '#000a';
+    CTX.fillRect(W/2-280, H/2+30, 560, 80);
+    CTX.strokeStyle = '#0f5'; CTX.lineWidth = 2;
+    CTX.strokeRect(W/2-280, H/2+30, 560, 80);
+    CTX.fillStyle = '#0f5'; CTX.font='bold 12px monospace';
+    CTX.textAlign='left';
+    CTX.fillText('💡 DICA RÁPIDA DE SEGURANÇA  ' + tip.icon, W/2-264, H/2+52);
+    CTX.fillStyle = '#fff'; CTX.font='13px monospace';
+    // quebra de linha se necessário
+    const lines = wrapTextLines(tip.tip, 530, 13);
+    for (let i=0;i<Math.min(lines.length,3);i++) {
+      CTX.fillText(lines[i], W/2-264, H/2+74 + i*16);
     }
+    CTX.textAlign='center';
+  } else {
+    CTX.fillStyle='#0f5'; CTX.font='bold 32px monospace';
+    CTX.fillText('🎉  FASE ' + game.levelNum + ' COMPLETA!', W/2, H/2 - 80);
+    CTX.fillStyle='#0ff'; CTX.font='bold 14px monospace';
+    CTX.fillText('Mandou bem! Aqui está seu desempenho:', W/2, H/2 - 50);
+    // stats em caixas
+    const stats = [
+      { l:'PATCHES', v: game.stats.patches, c:'#0f8' },
+      { l:'ACERTOS', v: game.stats.correct, c:'#0f5' },
+      { l:'INIMIGOS NEUTRALIZADOS', v: game.stats.defeated, c:'#0ff' },
+    ];
+    for (let i=0;i<stats.length;i++) {
+      const x = W/2 - 240 + i*160;
+      CTX.fillStyle = '#0a0a20';
+      CTX.fillRect(x, H/2-20, 140, 60);
+      CTX.strokeStyle = stats[i].c; CTX.lineWidth=2;
+      CTX.strokeRect(x, H/2-20, 140, 60);
+      CTX.fillStyle = stats[i].c; CTX.fillRect(x, H/2-20, 4, 60);
+      CTX.fillStyle = '#0ff'; CTX.font='bold 9px monospace';
+      CTX.fillText(stats[i].l, x+70, H/2-4);
+      CTX.fillStyle = '#fff'; CTX.font='bold 26px monospace';
+      CTX.fillText(String(stats[i].v), x+70, H/2+30);
+    }
+    if (Math.floor(t*2)%2) {
+      CTX.fillStyle='#fc0'; CTX.font='bold 14px monospace';
+      CTX.fillText('[ ENTER ou TOQUE pra continuar ]', W/2, H/2 + 90);
+    }
+    game._transTip = null; // reseta dica pra próxima transição
   }
   CTX.textAlign='left';
 }
@@ -3106,7 +3287,7 @@ function triggerBulletQuiz(enemy, isBoss=false) {
         spawnBurst(enemy.x+enemy.w/2, enemy.y+enemy.h/2, 40, '#fc0', 280, 1.0, 4);
         addShake(15);
         showToast({ icon:'💥', title:'BREACH SUCCESS!', sub:'Lord Ransomware -5 HP extras!', color:'#f0f', duration:3 });
-        Audio.sfx.correct();
+        Audio.sfx.breach();
       } else {
         // Inimigo normal: morre + bônus
         enemy.hit(99);
@@ -3174,7 +3355,7 @@ function triggerQuiz(enemy, wasStomp=false) {
         const col = stk >= 15 ? '#f0f' : stk >= 10 ? '#fc0' : stk >= 5 ? '#f44' : '#f80';
         showToast({ key:'streak', icon:'🔥', title:'STREAK x' + stk + '!', sub:'Bônus de ' + mult + 'x em XP e patches', color: col, duration: 3 });
         spawnBurst(game.player.x+12, game.player.y, 30, col, 250, 0.7, 3);
-        Audio.sfx.power();
+        Audio.sfx.streak();
       }
       // Se foi pisada, dá bounce estilo Mario; senão, breve invuln pra player não recolidir
       if (wasStomp) game.player.vy = -380;
@@ -3719,6 +3900,8 @@ function showToast(opts) {
     age: 0,
   });
   if (game.toasts.length > 4) game.toasts.shift();
+  // SFX sutil de notificação (exceto pra toasts repetidos via key)
+  if (!opts.silent && Audio.sfx.toast) Audio.sfx.toast();
 }
 function updateToasts(dt) {
   if (!game.toasts || !game.toasts.length) return;

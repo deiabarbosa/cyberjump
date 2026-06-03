@@ -1,8 +1,8 @@
-# 🛡️ CyberJump — A Saga do Hacker Branco
+# 🛡️ CyberJump — Defenda a Internet
 
-Um platformer estilo Super Mario Bros com temática de **cibersegurança**: você controla o *Pentester Pixel*, um hacker ético de capuz, que precisa atravessar a internet corrompida pra derrotar o vilão final, **Lord Ransomware**, e libertar todos os dados sequestrados do mundo.
+**Aprenda cibersegurança jogando.** Um platformer estilo Super Mario Bros onde cada inimigo é um golpe online real — phishing, ransomware, deepfake, engenharia social — e cada combate é uma pergunta prática que te ensina a se defender no dia a dia. Acertou? Neutraliza o vilão. Errou? Sai sabendo, porque cada resposta vem com explicação completa.
 
-> 🎮 **[Jogar agora](https://SEU_USUARIO.github.io/cyberjump/)** *(troque pelo seu link do GitHub Pages)*
+> 🎮 **[Jogar agora](https://deiabarbosa.github.io/cyberjump/)**
 
 ![badge](https://img.shields.io/badge/vanilla-JS-yellow) ![badge](https://img.shields.io/badge/canvas-API-blue) ![badge](https://img.shields.io/badge/zero-deps-green)
 
