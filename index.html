@@ -2154,7 +2154,7 @@ function drawHUD(player, score, level, xp, xpMax) {
 }
 
 /* ----- QUIZ --------------------------------------------------------------- */
-const QUIZ_TIME = 20; // tempo aumentado pra dar margem na leitura
+const QUIZ_TIME = 28; // tempo aumentado pra dar margem na leitura
 class Quiz {
   constructor(question, onResult) {
     this.q = question;
@@ -2188,7 +2188,7 @@ class Quiz {
     this.locked = true;
     this.result = { correct, timeout, q: this.q };
     // Mais tempo de leitura: o erro precisa ensinar
-    this.resultTimer = correct ? 2.2 : 5.5;
+    this.resultTimer = correct ? 4.0 : 8.5;
     if (correct) Audio.sfx.correct(); else Audio.sfx.wrong();
   }
   // Detecta a "categoria" da pergunta (prefixo do cenário) pra mostrar badge
