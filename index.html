@@ -129,6 +129,10 @@
   #btn-share-close:hover { background: #0ff2; color: #fff; }
   /* Esconde o native share em desktop (Web Share API só roda bem em mobile) */
   @media (hover: hover) and (pointer: fine) { #btn-share-native { display: none; } }
+  #share-status {
+    text-align: center; font: 12px monospace; color: #0ff;
+    min-height: 18px; margin: 8px 0;
+  }
 </style>
 </head>
 <body>
@@ -157,9 +161,10 @@
     </div>
     <div class="share-btns">
       <button id="btn-download">💾 BAIXAR PNG</button>
-      <button id="btn-linkedin">💼 ABRIR LINKEDIN</button>
+      <button id="btn-linkedin">💼 LINKEDIN (cola com Ctrl+V)</button>
       <button id="btn-share-native">📲 COMPARTILHAR</button>
     </div>
+    <div id="share-status"></div>
     <button id="btn-share-close">← VOLTAR AO MENU</button>
   </div>
 </div>
@@ -893,7 +898,7 @@ class Player {
     if (!(KEYS[' ']||KEYS['w']||KEYS['arrowup']) && this.vy < -200) {
       this.vy += 1600*dt;
     }
-    if (fire) this.shoot(bullets);
+    if (fire) { this.shoot(bullets); game.firstShotFired = true; }
 
     // gravidade
     this.vy += 1200*dt;
@@ -1145,6 +1150,7 @@ class Enemy {
 
   update(dt, level, player, bullets) {
     if (!this.alive) return;
+    if (this._frozen) { this.t0 += dt * 0.2; return; } // congelado pelo lock-on do tiro
     this.t0 += dt;
     switch(this.t) {
       case 'goomba': {
@@ -1301,6 +1307,32 @@ class Enemy {
   draw(cam) {
     if (!this.alive) return;
     const x = (this.x - cam.x)|0, y = (this.y - cam.y)|0;
+    // Lock-on visual: anel pulsante quando frozen pelo tiro
+    if (this._frozen) {
+      const t = performance.now()/100;
+      const pulse = 1 + Math.sin(t)*0.15;
+      CTX.strokeStyle = this.t === 'boss' ? '#f0f' : '#0ff';
+      CTX.lineWidth = 3;
+      CTX.globalAlpha = 0.7;
+      CTX.strokeRect(x-6*pulse, y-6*pulse, this.w+12*pulse, this.h+12*pulse);
+      CTX.globalAlpha = 0.4;
+      CTX.strokeRect(x-12*pulse, y-12*pulse, this.w+24*pulse, this.h+24*pulse);
+      CTX.globalAlpha = 1;
+      // crosshair nos cantos
+      const cl = 6;
+      CTX.strokeStyle = this.t === 'boss' ? '#f0f' : '#0ff';
+      CTX.lineWidth = 2;
+      CTX.beginPath();
+      CTX.moveTo(x-4, y-4); CTX.lineTo(x-4+cl, y-4);
+      CTX.moveTo(x-4, y-4); CTX.lineTo(x-4, y-4+cl);
+      CTX.moveTo(x+this.w+4, y-4); CTX.lineTo(x+this.w+4-cl, y-4);
+      CTX.moveTo(x+this.w+4, y-4); CTX.lineTo(x+this.w+4, y-4+cl);
+      CTX.moveTo(x-4, y+this.h+4); CTX.lineTo(x-4+cl, y+this.h+4);
+      CTX.moveTo(x-4, y+this.h+4); CTX.lineTo(x-4, y+this.h+4-cl);
+      CTX.moveTo(x+this.w+4, y+this.h+4); CTX.lineTo(x+this.w+4-cl, y+this.h+4);
+      CTX.moveTo(x+this.w+4, y+this.h+4); CTX.lineTo(x+this.w+4, y+this.h+4-cl);
+      CTX.stroke();
+    }
     switch(this.t) {
       case 'goomba': {
         // ====== CAVALO DE TRÓIA (Trojan Horse) — 28x26 ======
@@ -2939,18 +2971,37 @@ function checkCollisions() {
       applyPowerup(p.t);
     }
   }
-  // bullets vs enemies
+  // bullets vs enemies → tiro acertou: trava o inimigo e dispara quiz pra confirmar abate
   for (const b of game.bullets) {
     if (!b.friendly || b.life<=0) continue;
     for (const e of game.enemies) {
-      if (!e.alive) continue;
+      if (!e.alive || e._frozen) continue;
       if (rectsOverlap({x:b.x,y:b.y,w:b.w,h:b.h}, e.hitbox)) {
-        e.hit(b.dmg || 1);
         b.life = 0;
-        if (!e.alive) {
-          game.stats.defeated++;
-          game.stats.xp += (e.t === 'boss' ? 200 : e.t === 'dragon' ? 60 : 15);
-          if (game.stats.xp >= game.stats.xpMax) { game.stats.xpMax += 40; }
+        const dmg = b.dmg || 1;
+        // === BOSS: dano normal + a cada 5 HP perdido, abre quiz de vulnerabilidade ===
+        if (e.t === 'boss') {
+          e.hit(dmg);
+          spawnBurst(b.x, b.y, 10, '#0ff', 150, 0.4, 2);
+          if (!e.alive) {
+            game.stats.defeated++; game.stats.xp += 200;
+            if (game.stats.xp >= game.stats.xpMax) game.stats.xpMax += 40;
+          } else {
+            // Quiz de "BREACH ATTEMPT" a cada threshold de 5 HP
+            const last = e._lastQuizHp != null ? e._lastQuizHp : e.hpMax;
+            if (last - e.hp >= 5) {
+              e._lastQuizHp = e.hp;
+              e._frozen = true;
+              triggerBulletQuiz(e, true /*isBoss*/);
+            }
+          }
+        }
+        // === INIMIGOS NORMAIS: o tiro freeza, abre quiz pra confirmar o abate ===
+        else {
+          e._frozen = true;
+          // efeito visual: anel de "lock-on"
+          spawnBurst(e.x+e.w/2, e.y+e.h/2, 12, '#0ff', 200, 0.5, 3);
+          triggerBulletQuiz(e, false);
         }
         break;
       }
@@ -3029,6 +3080,73 @@ function applyPowerup(t) {
       break;
   }
   if (game.stats.xp >= game.stats.xpMax) game.stats.xpMax += 40;
+}
+
+function triggerBulletQuiz(enemy, isBoss=false) {
+  game.pendingEnemy = enemy;
+  game.state = STATE.QUIZ;
+  for (const k of Object.keys(PRESSED)) PRESSED[k] = false;
+  const q = nextQuestion();
+  // Pequeno shake e flash
+  addShake(isBoss ? 8 : 4);
+  if (isBoss) showToast({ key:'breach', icon:'⚡', title:'BREACH ATTEMPT', sub:'Acerte pra fragilizar o Lord Ransomware', color:'#f0f', duration:2 });
+  else showToast({ key:'lockon', icon:'🎯', title:'TIRO TRAVADO', sub:'Acerte o quiz pra confirmar o abate', color:'#0ff', duration:2 });
+  game.quiz = new Quiz(q, (result) => {
+    enemy._frozen = false;
+    if (result.correct) {
+      game.stats.correct++;
+      game.stats.streak = (game.stats.streak || 0) + 1;
+      if (game.stats.streak > (game.stats.bestStreak || 0)) game.stats.bestStreak = game.stats.streak;
+      const mult = Math.min(5, 1 + Math.floor(game.stats.streak / 3));
+      if (isBoss) {
+        // BREACH SUCCESS — boss leva 5 HP extras + grande efeito
+        enemy.hp = Math.max(0, enemy.hp - 5);
+        if (enemy.hp <= 0) { enemy.hit(99); game.stats.defeated++; }
+        spawnBurst(enemy.x+enemy.w/2, enemy.y+enemy.h/2, 80, '#f0f', 350, 1.2, 5);
+        spawnBurst(enemy.x+enemy.w/2, enemy.y+enemy.h/2, 40, '#fc0', 280, 1.0, 4);
+        addShake(15);
+        showToast({ icon:'💥', title:'BREACH SUCCESS!', sub:'Lord Ransomware -5 HP extras!', color:'#f0f', duration:3 });
+        Audio.sfx.correct();
+      } else {
+        // Inimigo normal: morre + bônus
+        enemy.hit(99);
+        game.stats.defeated++;
+        game.stats.xp += (enemy.t==='dragon'?80:25) * mult;
+        game.stats.patches += (enemy.t==='dragon'?5:2) * mult;
+        spawnBurst(enemy.x+enemy.w/2, enemy.y+enemy.h/2, 30, '#0f5', 250, 0.7, 3);
+        addShake(4);
+      }
+      if (game.stats.streak === 3 || game.stats.streak === 5 || game.stats.streak === 10 || game.stats.streak === 15) {
+        const stk = game.stats.streak;
+        const col = stk >= 15 ? '#f0f' : stk >= 10 ? '#fc0' : stk >= 5 ? '#f44' : '#f80';
+        showToast({ key:'streak', icon:'🔥', title:'STREAK x' + stk + '!', sub:'Bônus de ' + mult + 'x em XP e patches', color:col, duration:3 });
+      }
+    } else {
+      game.stats.wrong++;
+      game.stats.streak = 0;
+      if (isBoss) {
+        // BREACH FAILED — boss regenera 3 HP e o player toma hit
+        enemy.hp = Math.min(enemy.hpMax, enemy.hp + 3);
+        showToast({ icon:'⚠', title:'BREACH FAILED', sub:'Lord Ransomware regenerou 3 HP', color:'#f44', duration:3 });
+        addShake(10);
+        const dead = game.player.takeHit();
+        if (dead && game.player.lives <= 0) { endGame(false); return; }
+      } else {
+        // Inimigo normal — sobreviveu e contra-ataca
+        showToast({ icon:'❌', title:'INIMIGO ESCAPOU', sub:'A pergunta era a chance — leve no próximo!', color:'#f44', duration:3 });
+        const dead = game.player.takeHit();
+        if (dead && game.player.lives <= 0) { endGame(false); return; }
+        // empurra player pra trás
+        game.player.vx = (game.player.x < enemy.x ? -1 : 1) * 280;
+        game.player.vy = -240;
+        game.player.invuln = 1.2;
+      }
+    }
+    if (game.stats.xp >= game.stats.xpMax) game.stats.xpMax += 40;
+    game.quiz = null;
+    game.pendingEnemy = null;
+    game.state = STATE.PLAY;
+  });
 }
 
 function triggerQuiz(enemy, wasStomp=false) {
@@ -3897,18 +4015,57 @@ function downloadShareImage() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 }
-function shareOnLinkedIn() {
+function setShareStatus(msg, color) {
+  const el = document.getElementById('share-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color = color || '#0ff';
+}
+async function copyImageToClipboard(blob) {
+  if (!navigator.clipboard || !window.ClipboardItem) return false;
+  try {
+    await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+    return true;
+  } catch (e) { return false; }
+}
+async function shareOnLinkedIn() {
   const name = document.getElementById('player-name').value;
   if (name) localStorage.setItem('cyberjump_name', name);
-  // Primeiro baixa a imagem, depois abre o compose do LinkedIn
-  downloadShareImage();
-  setTimeout(() => {
+  const preview = document.getElementById('share-preview');
+  if (!preview || !preview._fullImage) return;
+  setShareStatus('Preparando imagem...', '#0ff');
+  preview._fullImage.toBlob(async (blob) => {
+    // 1) Web Share API com arquivo (mobile + alguns desktops)
+    if (navigator.canShare && navigator.share) {
+      const file = new File([blob], 'cyberjump-resultado.png', { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: 'CyberJump — meu resultado',
+            text: 'Acabei de jogar CyberJump 🛡️ — treinamento gamificado de cibersegurança. Confira: https://deiabarbosa.github.io/cyberjump/',
+          });
+          setShareStatus('✓ Compartilhado!', '#0f5');
+          return;
+        } catch (e) { /* cancelou ou falhou — segue */ }
+      }
+    }
+    // 2) Copia imagem pro clipboard + abre LinkedIn compose
+    const copied = await copyImageToClipboard(blob);
     const url = encodeURIComponent('https://deiabarbosa.github.io/cyberjump/');
-    window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + url, '_blank');
-  }, 600);
+    const text = encodeURIComponent('Acabei de jogar CyberJump 🛡️ — treinamento gamificado de cibersegurança da informação! Sua precisão vira cargo desbloqueado. Confira:');
+    const linkedinURL = 'https://www.linkedin.com/feed/?shareActive=true&shareUrl=' + url + '&text=' + text;
+    window.open(linkedinURL, '_blank', 'noopener');
+    if (copied) {
+      setShareStatus('✓ Imagem copiada! Cole no post do LinkedIn com Ctrl+V', '#0f5');
+    } else {
+      // 3) Fallback total: baixa imagem
+      downloadShareImage();
+      setShareStatus('✓ Imagem baixada — anexe manualmente no LinkedIn', '#fc0');
+    }
+  }, 'image/png');
 }
 function shareGeneric() {
-  // Web Share API (mobile) — fallback pra download
   const preview = document.getElementById('share-preview');
   if (!preview || !preview._fullImage) return;
   if (navigator.share && navigator.canShare) {
@@ -3918,16 +4075,20 @@ function shareGeneric() {
         try {
           await navigator.share({
             files: [file],
-            title: 'Meu resultado no CyberJump',
+            title: 'CyberJump — meu resultado',
             text: 'Acabei de jogar CyberJump — treinamento gamificado de cibersegurança! 🛡️',
+            url: 'https://deiabarbosa.github.io/cyberjump/',
           });
-        } catch (e) { /* user cancelled */ }
+          setShareStatus('✓ Compartilhado!', '#0f5');
+        } catch (e) { /* cancelou */ }
       } else {
         downloadShareImage();
+        setShareStatus('Imagem baixada — anexe ao post', '#fc0');
       }
     });
   } else {
     downloadShareImage();
+    setShareStatus('Imagem baixada', '#fc0');
   }
 }
 // Liga os botões da modal quando o DOM tá pronto
@@ -4000,6 +4161,18 @@ function update(dt) {
       if (pollPressed('enter')||pollPressed(' ')) { game.state = STATE.PLAY; game.startTime = performance.now(); }
     } break;
     case STATE.PLAY: {
+      // === TUTORIAL TOASTS (só na fase 1, sequencial por tempo) ===
+      if (game.levelNum === 1) {
+        const elapsed = (performance.now() - game.startTime) / 1000;
+        if (elapsed > 2.5 && !game._tut1) { game._tut1 = true;
+          showToast({ key:'tut', icon:'🎮', title:'MOVA-SE', sub:'← → ou A/D pra andar  •  ↑ ou ESPAÇO pra pular', color:'#0ff', duration:5 }); }
+        if (elapsed > 9 && !game._tut2) { game._tut2 = true;
+          showToast({ key:'tut', icon:'⚡', title:'ATIRE FIREWALL — [X]', sub:'No mobile, toque no botão ✦ vermelho à direita', color:'#fc0', duration:6 }); }
+        if (elapsed > 17 && !game._tut3 && !game.firstShotFired) { game._tut3 = true;
+          showToast({ key:'tut', icon:'💡', title:'EXPERIMENTE ATIRAR!', sub:'Mire num inimigo — o quiz abre na mira certa', color:'#f0f', duration:6 }); }
+        if (game.firstShotFired && !game._tutShot) { game._tutShot = true;
+          showToast({ key:'tut', icon:'🎯', title:'BOM! TIRO DISPARA QUIZ', sub:'Acerte a pergunta pra neutralizar — erre e leva o hit', color:'#0f5', duration:5 }); }
+      }
       game.player.update(dt, game.level, game.bullets);
       for (const e of game.enemies) e.update(dt, game.level, game.player, game.bullets);
       for (const p of game.powerups) p.update(dt);
@@ -4097,12 +4270,23 @@ function render(dt) {
       // Toasts (power-ups, streaks, conquistas)
       drawToasts();
       if (game.state===STATE.QUIZ) game.quiz.draw();
-      // tutorial inicial
-      if (game.levelNum===1 && game.player.x < 200) {
-        CTX.fillStyle='#000a'; CTX.fillRect(200, 70, 500, 50);
-        CTX.strokeStyle='#0ff'; CTX.strokeRect(200, 70, 500, 50);
-        CTX.fillStyle='#0ff'; CTX.font='12px monospace';
-        CTX.fillText('TUTORIAL: ← → mover  |  ESPAÇO pular  |  X atirar  |  encoste num inimigo para quiz', 215, 102);
+      // Tutorial persistente — mostra dica do X piscando até primeiro tiro (só fase 1)
+      if (game.levelNum===1 && !game.firstShotFired) {
+        const blink = Math.floor(performance.now()/350)%2;
+        if (blink) {
+          CTX.save();
+          CTX.fillStyle='#000c';
+          CTX.fillRect(W/2-220, H-92, 440, 42);
+          CTX.strokeStyle='#fc0'; CTX.lineWidth=3;
+          CTX.strokeRect(W/2-220, H-92, 440, 42);
+          CTX.fillStyle='#fc0'; CTX.font='bold 14px monospace';
+          CTX.textAlign='center';
+          CTX.fillText('💡 APERTE [X] PRA ATIRAR FIREWALL!', W/2, H-72);
+          CTX.fillStyle='#fff'; CTX.font='10px monospace';
+          CTX.fillText('Tiros travam o inimigo e disparam o quiz da resposta certa', W/2, H-58);
+          CTX.textAlign='left';
+          CTX.restore();
+        }
       }
     } break;
     case STATE.TRANS: drawTransition(game.time); break;
