@@ -133,6 +133,29 @@
     text-align: center; font: 12px monospace; color: #0ff;
     min-height: 18px; margin: 8px 0;
   }
+  .share-text-toggle {
+    margin: 8px 0 12px; color: #0ff8; font: 11px monospace;
+  }
+  .share-text-toggle summary {
+    cursor: pointer; padding: 6px; user-select: none;
+    border: 1px dashed #0ff4; border-radius: 4px;
+    transition: background .12s, border-color .12s;
+  }
+  .share-text-toggle summary:hover { background: #0ff1; border-color: #0ff8; }
+  #share-text-fallback {
+    display: none; width: 100%; box-sizing: border-box;
+    padding: 10px; margin-top: 8px;
+    background: #000; color: #cfc; border: 1px solid #0ff8; border-radius: 4px;
+    font: 11px monospace; resize: vertical; min-height: 180px;
+  }
+  details[open] #share-text-fallback { display: block; }
+  #btn-copy-text {
+    display: block; width: 100%; margin-top: 6px;
+    padding: 8px; background: #0a3050; color: #0ff;
+    border: 1px solid #0ff8; border-radius: 4px; cursor: pointer;
+    font: bold 11px monospace;
+  }
+  #btn-copy-text:hover { background: #0ff; color: #000; }
 </style>
 </head>
 <body>
@@ -160,11 +183,16 @@
       <input id="player-name" type="text" maxlength="32" placeholder="Pentester Anônimo" autocomplete="name">
     </div>
     <div class="share-btns">
+      <button id="btn-linkedin">💼 LINKEDIN (copia texto e abre)</button>
       <button id="btn-download">💾 BAIXAR PNG</button>
-      <button id="btn-linkedin">💼 LINKEDIN (cola com Ctrl+V)</button>
       <button id="btn-share-native">📲 COMPARTILHAR</button>
     </div>
     <div id="share-status"></div>
+    <details class="share-text-toggle">
+      <summary>📝 Ver/editar o texto que será compartilhado</summary>
+      <textarea id="share-text-fallback" rows="12" readonly></textarea>
+      <button id="btn-copy-text" type="button">📋 Copiar texto</button>
+    </details>
     <button id="btn-share-close">← VOLTAR AO MENU</button>
   </div>
 </div>
@@ -4185,6 +4213,9 @@ function refreshSharePreview() {
   pctx.imageSmoothingEnabled = true;
   pctx.drawImage(img, 0, 0, preview.width, preview.height);
   preview._fullImage = img;
+  // Atualiza também o textarea com o texto que será compartilhado
+  const ta = document.getElementById('share-text-fallback');
+  if (ta) ta.value = buildShareText(name);
 }
 function downloadShareImage() {
   const preview = document.getElementById('share-preview');
@@ -4204,75 +4235,103 @@ function setShareStatus(msg, color) {
   el.textContent = msg || '';
   el.style.color = color || '#0ff';
 }
-async function copyImageToClipboard(blob) {
-  if (!navigator.clipboard || !window.ClipboardItem) return false;
-  try {
-    await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
-    return true;
-  } catch (e) { return false; }
+
+// Monta o texto bonito com stats + URL pra colar no LinkedIn
+function buildShareText(playerName) {
+  const rank = getRank();
+  const name = (playerName || 'um(a) defensor(a) digital').trim();
+  const won = !!game.won;
+  const lines = [
+    won ? '🛡️ Acabei de derrotar o Lord Ransomware no CyberJump!'
+        : '🛡️ Acabei de jogar CyberJump — Defenda a Internet!',
+    '',
+    `${rank.emoji} Cargo desbloqueado: ${rank.title}`,
+    `   (${rank.sub})`,
+    '',
+    '📊 Meu desempenho:',
+    `   ★ Pontuação: ${finalScore()}`,
+    `   ✓ Acertos: ${game.stats.correct} de ${game.stats.correct + game.stats.wrong}  (${fmtPct()})`,
+    `   🔥 Maior streak: x${game.stats.bestStreak || 0}`,
+    `   ⚔ Inimigos neutralizados: ${game.stats.defeated}`,
+    `   ⏱ Tempo total: ${fmtTime(game.totalTime)}`,
+    '',
+    'CyberJump é um jogo de plataforma educativo onde cada inimigo é um golpe online real (phishing, ransomware, deepfake, engenharia social…) e cada combate é uma pergunta prática sobre cibersegurança. Aprendizado de verdade, gamificado.',
+    '',
+    '👉 Jogue você também (de graça, direto no navegador):',
+    'https://deiabarbosa.github.io/cyberjump/',
+    '',
+    '#Cibersegurança #SegurançaDaInformação #SegInfo #InfoSec #HackerÉtico #Aprendizado',
+  ];
+  return lines.join('\n');
 }
+
 async function shareOnLinkedIn() {
   const name = document.getElementById('player-name').value;
   if (name) localStorage.setItem('cyberjump_name', name);
-  const preview = document.getElementById('share-preview');
-  if (!preview || !preview._fullImage) return;
-  setShareStatus('Preparando imagem...', '#0ff');
-  preview._fullImage.toBlob(async (blob) => {
-    // 1) Web Share API com arquivo (mobile + alguns desktops)
-    if (navigator.canShare && navigator.share) {
-      const file = new File([blob], 'cyberjump-resultado.png', { type: 'image/png' });
-      if (navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'CyberJump — meu resultado',
-            text: 'Acabei de jogar CyberJump 🛡️ — treinamento gamificado de cibersegurança. Confira: https://deiabarbosa.github.io/cyberjump/',
-          });
-          setShareStatus('✓ Compartilhado!', '#0f5');
-          return;
-        } catch (e) { /* cancelou ou falhou — segue */ }
-      }
-    }
-    // 2) Copia imagem pro clipboard + abre LinkedIn compose
-    const copied = await copyImageToClipboard(blob);
-    const url = encodeURIComponent('https://deiabarbosa.github.io/cyberjump/');
-    const text = encodeURIComponent('Acabei de jogar CyberJump 🛡️ — treinamento gamificado de cibersegurança da informação! Sua precisão vira cargo desbloqueado. Confira:');
-    const linkedinURL = 'https://www.linkedin.com/feed/?shareActive=true&shareUrl=' + url + '&text=' + text;
-    window.open(linkedinURL, '_blank', 'noopener');
-    if (copied) {
-      setShareStatus('✓ Imagem copiada! Cole no post do LinkedIn com Ctrl+V', '#0f5');
-    } else {
-      // 3) Fallback total: baixa imagem
-      downloadShareImage();
-      setShareStatus('✓ Imagem baixada — anexe manualmente no LinkedIn', '#fc0');
-    }
-  }, 'image/png');
-}
-function shareGeneric() {
-  const preview = document.getElementById('share-preview');
-  if (!preview || !preview._fullImage) return;
-  if (navigator.share && navigator.canShare) {
-    preview._fullImage.toBlob(async (blob) => {
-      const file = new File([blob], 'cyberjump-resultado.png', { type: 'image/png' });
-      if (navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'CyberJump — meu resultado',
-            text: 'Acabei de jogar CyberJump — treinamento gamificado de cibersegurança! 🛡️',
-            url: 'https://deiabarbosa.github.io/cyberjump/',
-          });
-          setShareStatus('✓ Compartilhado!', '#0f5');
-        } catch (e) { /* cancelou */ }
-      } else {
-        downloadShareImage();
-        setShareStatus('Imagem baixada — anexe ao post', '#fc0');
-      }
-    });
-  } else {
-    downloadShareImage();
-    setShareStatus('Imagem baixada', '#fc0');
+  const text = buildShareText(name);
+
+  // Tenta copiar texto pro clipboard (95% dos navegadores suportam)
+  let copied = false;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch (e) { /* fall through */ }
   }
+  // Fallback: cria textarea oculto e tenta execCommand
+  if (!copied) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch (e) { /* segue mesmo assim */ }
+  }
+
+  // Abre LinkedIn compose
+  const url = encodeURIComponent('https://deiabarbosa.github.io/cyberjump/');
+  const linkedinURL = 'https://www.linkedin.com/feed/?shareActive=true&shareUrl=' + url;
+  window.open(linkedinURL, '_blank', 'noopener');
+
+  if (copied) {
+    setShareStatus('✓ Texto copiado! No LinkedIn, cole com Ctrl+V (ou Cmd+V)', '#0f5');
+  } else {
+    // Mostra o texto na própria modal pra usuário copiar manualmente
+    showShareTextFallback(text);
+    setShareStatus('Copie o texto abaixo e cole no LinkedIn', '#fc0');
+  }
+}
+
+function showShareTextFallback(text) {
+  const el = document.getElementById('share-text-fallback');
+  if (!el) return;
+  el.value = text;
+  el.style.display = 'block';
+  el.focus();
+  el.select();
+}
+async function shareGeneric() {
+  // Web Share API com texto (mobile dá menu nativo bonito pra escolher rede)
+  const name = document.getElementById('player-name').value;
+  const text = buildShareText(name);
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: 'CyberJump — meu resultado',
+        text: text,
+      });
+      setShareStatus('✓ Compartilhado!', '#0f5');
+      return;
+    } catch (e) { /* cancelou — segue */ }
+  }
+  // Fallback: copia texto
+  let copied = false;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try { await navigator.clipboard.writeText(text); copied = true; } catch (e) {}
+  }
+  setShareStatus(copied ? '✓ Texto copiado!' : 'Veja o texto pronto abaixo', copied ? '#0f5' : '#fc0');
+  if (!copied) showShareTextFallback(text);
 }
 // Liga os botões da modal quando o DOM tá pronto
 function bindShareModal() {
@@ -4286,6 +4345,21 @@ function bindShareModal() {
   if (sBtn) sBtn.addEventListener('click', shareGeneric);
   const bBtn = document.getElementById('btn-share-close');
   if (bBtn) bBtn.addEventListener('click', closeShareModal);
+  // Botão de copiar manualmente o texto
+  const cBtn = document.getElementById('btn-copy-text');
+  if (cBtn) cBtn.addEventListener('click', async () => {
+    const ta = document.getElementById('share-text-fallback');
+    if (!ta) return;
+    ta.select();
+    let ok = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(ta.value); ok = true; } catch (e) {}
+    }
+    if (!ok) {
+      try { ok = document.execCommand('copy'); } catch (e) {}
+    }
+    setShareStatus(ok ? '✓ Texto copiado!' : 'Selecione o texto e copie manualmente', ok ? '#0f5' : '#fc0');
+  });
 }
 
 /* ----- MAIN LOOP ---------------------------------------------------------- */
