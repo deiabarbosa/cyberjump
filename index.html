@@ -253,9 +253,9 @@ function syncTouchUI() {
   TOUCH_EL.classList.toggle('hide-action', !showC);
 }
 
-/* Auto-fire enquanto segura X */
+/* Auto-fire enquanto segura X — só em PLAY (senão vaza pro quiz/menu) */
 function tickHeldRepeats() {
-  if (heldKeys.has('x')) PRESSED['x'] = true;
+  if (game && game.state === 'play' && heldKeys.has('x')) PRESSED['x'] = true;
 }
 
 /* ----- CANVAS TAP — pros menus, intro, quiz, telas finais ---------------- */
@@ -2181,7 +2181,7 @@ class Quiz {
     if (pollPressed('2')) { this.selected = 1; this.confirm(); }
     if (pollPressed('3')) { this.selected = 2; this.confirm(); }
     if (pollPressed('4')) { this.selected = 3; this.confirm(); }
-    if (pollPressed('enter')||pollPressed(' ')||pollPressed('x')) this.confirm();
+    if (pollPressed('enter')) this.confirm(); // ENTER apenas — X é só pra atirar
   }
   confirm() { this.lock(this.selected === this.q.c, false); }
   lock(correct, timeout) {
@@ -2981,6 +2981,8 @@ function applyPowerup(t) {
 function triggerQuiz(enemy, wasStomp=false) {
   game.pendingEnemy = enemy;
   game.state = STATE.QUIZ;
+  // Limpa flags de input pendentes pra quiz não consumir um press anterior
+  for (const k of Object.keys(PRESSED)) PRESSED[k] = false;
   const q = nextQuestion();
   game.quiz = new Quiz(q, (result) => {
     if (result.correct) {
