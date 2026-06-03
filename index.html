@@ -2134,23 +2134,6 @@ function drawHUD(player, score, level, xp, xpMax) {
     CTX.globalAlpha = 1;
   }
 
-  // Toast de marco de streak (3x, 5x, 10x, 15x)
-  if (game.streakToast && game.streakToast.t > 0) {
-    const tt = game.streakToast.t;
-    const alpha = Math.min(1, tt) * (tt > 1.5 ? (2-tt)*2 : 1);
-    CTX.globalAlpha = alpha;
-    CTX.font = 'bold 28px monospace';
-    CTX.textAlign='center';
-    const yo = (2 - tt) * 12;
-    CTX.fillStyle = '#000a';
-    CTX.fillRect(W/2-220, 120-yo, 440, 50);
-    CTX.strokeStyle = '#fc0'; CTX.lineWidth = 3;
-    CTX.strokeRect(W/2-220, 120-yo, 440, 50);
-    CTX.fillStyle = '#fc0';
-    CTX.fillText(game.streakToast.text, W/2, 152-yo);
-    CTX.textAlign='left';
-    CTX.globalAlpha = 1;
-  }
 }
 
 /* ----- QUIZ --------------------------------------------------------------- */
@@ -2302,8 +2285,9 @@ class Quiz {
     CTX.fillText('▸ O QUE VOCÊ FARIA?', bx+24, altLabelY);
 
     const altStartY = altLabelY + 10;
-    const altH = 42;
-    const altGap = 6;
+    // Em modo "trancado" (resultado), alternativas ficam compactas pra liberar espaço pra explicação
+    const altH = this.locked ? 24 : 42;
+    const altGap = this.locked ? 3 : 6;
     for (let i=0;i<4;i++) {
       const ay = altStartY + i*(altH+altGap);
       let bgCol, brCol, txtCol, badgeCol;
@@ -2313,7 +2297,7 @@ class Quiz {
         } else if (i === this.selected && !this.result.correct) {
           bgCol='#3a0a14'; brCol='#f44'; txtCol='#fbb'; badgeCol='#f44';
         } else {
-          bgCol='#0a0a14'; brCol='#333'; txtCol='#777'; badgeCol='#444';
+          bgCol='#0a0a14'; brCol='#222'; txtCol='#555'; badgeCol='#222';
         }
       } else if (i === this.selected) {
         bgCol='#053040'; brCol='#0ff'; txtCol='#fff'; badgeCol='#0ff';
@@ -2324,85 +2308,134 @@ class Quiz {
       CTX.fillStyle = bgCol;
       CTX.fillRect(bx+24, ay, bw-48, altH);
       CTX.strokeStyle = brCol;
-      CTX.lineWidth = 2;
+      CTX.lineWidth = this.locked ? 1 : 2;
       CTX.strokeRect(bx+24, ay, bw-48, altH);
       // badge do número (à esquerda)
+      const badgeW = this.locked ? 28 : 38;
       CTX.fillStyle = badgeCol;
-      CTX.fillRect(bx+24, ay, 38, altH);
+      CTX.fillRect(bx+24, ay, badgeW, altH);
       CTX.fillStyle = '#000';
-      CTX.font = 'bold 18px monospace';
+      CTX.font = this.locked ? 'bold 13px monospace' : 'bold 18px monospace';
       CTX.textAlign='center';
-      CTX.fillText((i+1), bx+24+19, ay+27);
+      CTX.fillText((i+1), bx+24+badgeW/2, ay + (this.locked ? 16 : 27));
       CTX.textAlign='left';
-      // texto da alternativa — pode quebrar em 2 linhas
+      // texto da alternativa
       CTX.fillStyle = txtCol;
-      CTX.font = '13px monospace';
-      const altLines = wrapTextLines(this.q.a[i], bw-48-50-30, 13);
-      const showLines = altLines.slice(0, 2);
-      // centraliza verticalmente
-      const startY = showLines.length === 1 ? ay+27 : ay+18;
-      for (let j=0;j<showLines.length;j++) {
-        CTX.fillText(showLines[j], bx+74, startY + j*14);
+      CTX.font = this.locked ? '12px monospace' : '13px monospace';
+      const textOff = badgeW + 12;
+      const altLines = wrapTextLines(this.q.a[i], bw-48-textOff-30, 12);
+      if (this.locked) {
+        // 1 linha só pra caber
+        CTX.fillText(altLines[0] || '', bx+24+textOff, ay+16);
+      } else {
+        const showLines = altLines.slice(0, 2);
+        const startY = showLines.length === 1 ? ay+27 : ay+18;
+        for (let j=0;j<showLines.length;j++) {
+          CTX.fillText(showLines[j], bx+24+textOff, startY + j*14);
+        }
       }
       // marcação visual ✓/✗ à direita
       if (this.locked) {
         if (i === this.q.c) {
-          CTX.fillStyle = '#0f5'; CTX.font = 'bold 22px monospace';
+          CTX.fillStyle = '#0f5';
+          CTX.font = this.locked ? 'bold 16px monospace' : 'bold 22px monospace';
           CTX.textAlign='right';
-          CTX.fillText('✓', bx+bw-32, ay+30);
+          CTX.fillText('✓', bx+bw-32, ay+(this.locked?18:30));
           CTX.textAlign='left';
         } else if (i === this.selected && !this.result.correct) {
-          CTX.fillStyle = '#f44'; CTX.font = 'bold 22px monospace';
+          CTX.fillStyle = '#f44';
+          CTX.font = this.locked ? 'bold 16px monospace' : 'bold 22px monospace';
           CTX.textAlign='right';
-          CTX.fillText('✗', bx+bw-32, ay+30);
+          CTX.fillText('✗', bx+bw-32, ay+(this.locked?18:30));
           CTX.textAlign='left';
         }
       }
     }
 
-    // ===== FOOTER (hint ou explicação) =====
-    const footY = altStartY + 4*(altH+altGap) + 6;
+    // ===== FOOTER (hint OU painel educativo grande quando trancado) =====
+    const footY = altStartY + 4*(altH+altGap) + 8;
     const footH = bh - (footY - by) - 14;
     if (this.locked) {
-      // Caixa de explicação educativa
+      // === PAINEL EDUCATIVO ===
       const okCol = this.result.correct ? '#0f5' : '#f44';
-      const okBg  = this.result.correct ? '#06301a' : '#3a0a14';
+      const okBg  = this.result.correct ? '#04200e' : '#280508';
+      // fundo
       CTX.fillStyle = okBg;
       CTX.fillRect(bx+20, footY, bw-40, footH);
       CTX.strokeStyle = okCol;
       CTX.lineWidth = 2;
       CTX.strokeRect(bx+20, footY, bw-40, footH);
 
-      // Linha 1: status
+      let yCur = footY + 8;
+
+      // --- BANNER de status ---
+      // Faixa colorida em cima
       CTX.fillStyle = okCol;
-      CTX.font = 'bold 14px monospace';
+      CTX.fillRect(bx+20, footY, bw-40, 28);
+      CTX.fillStyle = '#000';
+      CTX.font = 'bold 16px monospace';
       const status = this.result.correct
-        ? '✓ CORRETO — INIMIGO NEUTRALIZADO'
-        : (this.result.timeout ? '✗ TEMPO ESGOTADO — VOCÊ FOI ATINGIDO' : '✗ INCORRETO');
-      CTX.fillText(status, bx+30, footY+18);
+        ? '✓  CORRETO — INIMIGO NEUTRALIZADO'
+        : (this.result.timeout ? '✗  TEMPO ESGOTADO — VOCÊ FOI ATINGIDO' : '✗  INCORRETO — VOCÊ FOI ATINGIDO');
+      CTX.fillText(status, bx+32, footY+20);
+      yCur = footY + 38;
 
-      // Linha 2: resposta certa (sempre mostra, reforço pedagógico)
-      CTX.fillStyle = '#0f5';
+      // --- "VOCÊ MARCOU" (só quando erra) ---
+      if (!this.result.correct && !this.result.timeout) {
+        // Caixa vermelha com a alternativa escolhida
+        CTX.fillStyle = '#400a14';
+        CTX.fillRect(bx+30, yCur, bw-60, 32);
+        CTX.strokeStyle = '#f448'; CTX.lineWidth = 1;
+        CTX.strokeRect(bx+30, yCur, bw-60, 32);
+        CTX.fillStyle = '#f88';
+        CTX.font = 'bold 11px monospace';
+        CTX.fillText('❌ VOCÊ MARCOU', bx+40, yCur+13);
+        CTX.fillStyle = '#fcc';
+        CTX.font = '12px monospace';
+        const youLines = wrapTextLines(this.q.a[this.selected], bw-100, 12);
+        CTX.fillText(youLines[0] || '', bx+40, yCur+27);
+        yCur += 38;
+      } else if (this.result.timeout) {
+        CTX.fillStyle = '#400a14';
+        CTX.fillRect(bx+30, yCur, bw-60, 28);
+        CTX.strokeStyle = '#f448'; CTX.lineWidth = 1;
+        CTX.strokeRect(bx+30, yCur, bw-60, 28);
+        CTX.fillStyle = '#fcc';
+        CTX.font = 'bold 12px monospace';
+        CTX.fillText('⏱  Você ficou em dúvida demais — na vida real, o tempo também aperta.', bx+40, yCur+18);
+        yCur += 34;
+      }
+
+      // --- RESPOSTA CERTA ---
+      // Caixa verde
+      CTX.fillStyle = '#06301c';
+      CTX.fillRect(bx+30, yCur, bw-60, 32);
+      CTX.strokeStyle = '#0f58'; CTX.lineWidth = 1;
+      CTX.strokeRect(bx+30, yCur, bw-60, 32);
+      CTX.fillStyle = '#8f8';
       CTX.font = 'bold 11px monospace';
-      CTX.fillText('RESPOSTA CORRETA:', bx+30, footY+36);
-      CTX.fillStyle = '#fff';
-      CTX.font = '11px monospace';
-      const corrLines = wrapTextLines(this.q.a[this.q.c], bw-180, 11);
-      CTX.fillText(corrLines[0] || '', bx+170, footY+36);
+      CTX.fillText('✅ RESPOSTA CERTA', bx+40, yCur+13);
+      CTX.fillStyle = '#dfd';
+      CTX.font = '12px monospace';
+      const corrLines = wrapTextLines(this.q.a[this.q.c], bw-100, 12);
+      CTX.fillText(corrLines[0] || '', bx+40, yCur+27);
+      yCur += 40;
 
-      // Linha 3+: explicação educacional
+      // --- POR QUÊ (explicação) ---
       CTX.fillStyle = '#0ff';
-      CTX.font = 'bold 11px monospace';
-      CTX.fillText('💡 POR QUÊ:', bx+30, footY+54);
-      CTX.fillStyle = '#ccddee';
-      CTX.font = '11px monospace';
-      const expLines = wrapTextLines(this.q.e, bw-130, 11);
-      const maxExpL = Math.floor((footH - 64) / 13);
+      CTX.font = 'bold 12px monospace';
+      CTX.fillText('📚  POR QUÊ:', bx+30, yCur);
+      yCur += 16;
+      CTX.fillStyle = '#cdfcff';
+      CTX.font = '12px monospace';
+      const expLines = wrapTextLines(this.q.e, bw-60, 12);
+      const remaining = footH - (yCur - footY) - 6;
+      const maxExpL = Math.floor(remaining / 15);
       for (let i=0;i<Math.min(expLines.length, maxExpL);i++) {
-        CTX.fillText(expLines[i], bx+110, footY+54 + i*13);
+        CTX.fillText(expLines[i], bx+30, yCur + i*15);
       }
     } else {
-      // Caixa com dicas e princípios
+      // === RODAPÉ INICIAL (antes de responder) ===
       CTX.fillStyle = '#0a1a2a';
       CTX.fillRect(bx+20, footY, bw-40, footH);
       CTX.strokeStyle = '#055';
@@ -2413,7 +2446,7 @@ class Quiz {
       CTX.fillText('💡 PRINCÍPIO: Pense como reagiria na vida real — sem truques, só boas práticas.', bx+30, footY+18);
       CTX.fillStyle = '#888';
       CTX.font = '10px monospace';
-      CTX.fillText('Controles:  ↑↓ ou W/S navegar   ENTER/ESPAÇO confirmar   1-4 atalho rápido   (mobile: toque na opção)', bx+30, footY+36);
+      CTX.fillText('↑↓ ou W/S navegar   ENTER confirmar   1-4 atalho rápido   (mobile: toque na opção)', bx+30, footY+36);
     }
 
     CTX.restore();
@@ -2969,11 +3002,31 @@ function checkCollisions() {
 function applyPowerup(t) {
   Audio.sfx.power();
   switch(t) {
-    case 'patch':  game.stats.patches++; game.stats.xp += 5; spawnBurst(game.player.x+12, game.player.y+12, 12, '#0f8', 120, 0.5, 2); break;
-    case 'token':  game.player.tokenT = 30; spawnBurst(game.player.x+12, game.player.y+12, 14, '#fc0', 140, 0.6, 3); break;
-    case 'shield': game.player.shieldT = 999; spawnBurst(game.player.x+12, game.player.y+12, 14, '#4af', 140, 0.6, 3); break;
-    case 'cloak':  game.player.cloakT = 5; spawnBurst(game.player.x+12, game.player.y+12, 14, '#a0f', 140, 0.6, 3); break;
-    case 'heart':  game.player.lives++; spawnBurst(game.player.x+12, game.player.y+12, 18, '#f33', 160, 0.7, 3); break;
+    case 'patch':
+      game.stats.patches++; game.stats.xp += 5;
+      spawnBurst(game.player.x+12, game.player.y+12, 12, '#0f8', 120, 0.5, 2);
+      showToast({ key:'patch', icon:'⚙', title:'PATCH DE SEGURANÇA', sub:'Sistema reforçado (+5 XP)', color:'#0f8', duration:1.6 });
+      break;
+    case 'token':
+      game.player.tokenT = 30;
+      spawnBurst(game.player.x+12, game.player.y+12, 14, '#fc0', 140, 0.6, 3);
+      showToast({ icon:'🔑', title:'AUTH TOKEN ATIVADO', sub:'Pulo duplo por 30s — 2FA do seu pulo!', color:'#fc0', duration:3.5 });
+      break;
+    case 'shield':
+      game.player.shieldT = 999;
+      spawnBurst(game.player.x+12, game.player.y+12, 14, '#4af', 140, 0.6, 3);
+      showToast({ icon:'🛡', title:'FIREWALL SHIELD', sub:'Absorve o próximo ataque', color:'#4af', duration:3.5 });
+      break;
+    case 'cloak':
+      game.player.cloakT = 5;
+      spawnBurst(game.player.x+12, game.player.y+12, 14, '#a0f', 140, 0.6, 3);
+      showToast({ icon:'🕶', title:'ENCRYPTION CLOAK', sub:'Invisível por 5s — tráfego criptografado', color:'#a0f', duration:3.5 });
+      break;
+    case 'heart':
+      game.player.lives++;
+      spawnBurst(game.player.x+12, game.player.y+12, 18, '#f33', 160, 0.7, 3);
+      showToast({ icon:'❤', title:'BACKUP RESTAURADO', sub:'+1 vida — sempre tenha backups!', color:'#f33', duration:3.5 });
+      break;
   }
   if (game.stats.xp >= game.stats.xpMax) game.stats.xpMax += 40;
 }
@@ -2999,8 +3052,10 @@ function triggerQuiz(enemy, wasStomp=false) {
       addShake(3);
       // Marcos visuais do streak
       if (game.stats.streak === 3 || game.stats.streak === 5 || game.stats.streak === 10 || game.stats.streak === 15) {
-        game.streakToast = { text: '🔥 STREAK x' + game.stats.streak + '!  (+' + mult + 'x bônus)', t: 2.0 };
-        spawnBurst(game.player.x+12, game.player.y, 30, ['#fc0','#f44','#f0f','#0ff'][Math.min(3, Math.floor(game.stats.streak/3))], 250, 0.7, 3);
+        const stk = game.stats.streak;
+        const col = stk >= 15 ? '#f0f' : stk >= 10 ? '#fc0' : stk >= 5 ? '#f44' : '#f80';
+        showToast({ key:'streak', icon:'🔥', title:'STREAK x' + stk + '!', sub:'Bônus de ' + mult + 'x em XP e patches', color: col, duration: 3 });
+        spawnBurst(game.player.x+12, game.player.y, 30, col, 250, 0.7, 3);
         Audio.sfx.power();
       }
       // Se foi pisada, dá bounce estilo Mario; senão, breve invuln pra player não recolidir
@@ -3530,6 +3585,76 @@ function drawBossFight() {
   CTX.fillText('• Pegue o PATCH ZERO (fase 3) → invencível 5s', 14, H-16);
 }
 
+/* ===== SISTEMA DE TOASTS (popups stackáveis) ===== */
+function showToast(opts) {
+  game.toasts = game.toasts || [];
+  // dedup por chave (evita stack quando coleta vários patches seguidos)
+  if (opts.key) game.toasts = game.toasts.filter(t => t.key !== opts.key);
+  game.toasts.push({
+    key: opts.key,
+    icon: opts.icon || '★',
+    title: opts.title || '',
+    sub: opts.sub || '',
+    color: opts.color || '#0ff',
+    life: opts.duration || 2.8,
+    maxLife: opts.duration || 2.8,
+    age: 0,
+  });
+  if (game.toasts.length > 4) game.toasts.shift();
+}
+function updateToasts(dt) {
+  if (!game.toasts || !game.toasts.length) return;
+  for (const t of game.toasts) { t.life -= dt; t.age += dt; }
+  game.toasts = game.toasts.filter(t => t.life > 0);
+}
+function drawToasts() {
+  if (!game.toasts || !game.toasts.length) return;
+  let y = 80;
+  for (const t of game.toasts) {
+    const slideIn = Math.min(1, t.age * 5);
+    const fadeOut = t.life < 0.5 ? t.life / 0.5 : 1;
+    const alpha = slideIn * fadeOut;
+    const off = (1 - slideIn) * 80;
+    const w = 340, h = 60;
+    const x = W - w - 14 + off;
+    CTX.globalAlpha = alpha * 0.4;
+    // sombra/glow
+    CTX.fillStyle = t.color;
+    CTX.fillRect(x-3, y-3, w+6, h+6);
+    CTX.globalAlpha = alpha;
+    // bg sólido
+    CTX.fillStyle = '#06061a';
+    CTX.fillRect(x, y, w, h);
+    // faixa lateral colorida
+    CTX.fillStyle = t.color;
+    CTX.fillRect(x, y, 6, h);
+    CTX.strokeStyle = t.color;
+    CTX.lineWidth = 2;
+    CTX.strokeRect(x, y, w, h);
+    // ícone grande
+    CTX.fillStyle = t.color;
+    CTX.font = 'bold 28px sans-serif';
+    CTX.fillText(t.icon, x + 18, y + 40);
+    // título
+    CTX.fillStyle = '#fff';
+    CTX.font = 'bold 14px monospace';
+    CTX.fillText(t.title, x + 60, y + 24);
+    // subtítulo
+    if (t.sub) {
+      CTX.fillStyle = '#ccd';
+      CTX.font = '11px monospace';
+      CTX.fillText(t.sub, x + 60, y + 44);
+    }
+    // barra de duração na base
+    CTX.globalAlpha = alpha * 0.8;
+    CTX.fillStyle = t.color;
+    const barW = (w - 8) * (t.life / t.maxLife);
+    CTX.fillRect(x + 4, y + h - 3, barW, 2);
+    CTX.globalAlpha = 1;
+    y += h + 8;
+  }
+}
+
 function endGame(win) {
   game.totalTime = (performance.now() - game.startTime) / 1000;
   const score = finalScore();
@@ -3835,8 +3960,11 @@ function update(dt) {
   syncTouchUI();
   tickHeldRepeats();
 
-  // toast de streak decai
+  // toast de streak decai (legado)
   if (game.streakToast && game.streakToast.t > 0) game.streakToast.t -= dt;
+
+  // toasts genéricos
+  updateToasts(dt);
 
   // mute global
   if (pollPressed('m')) Audio.toggleMute();
@@ -3966,6 +4094,8 @@ function render(dt) {
       if (game.boss) drawBossFight();
       // HUD
       drawHUD(game.player, game.stats, game.level, game.stats.xp, game.stats.xpMax);
+      // Toasts (power-ups, streaks, conquistas)
+      drawToasts();
       if (game.state===STATE.QUIZ) game.quiz.draw();
       // tutorial inicial
       if (game.levelNum===1 && game.player.x < 200) {
